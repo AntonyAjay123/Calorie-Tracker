@@ -19,6 +19,7 @@ const chicken: Food = {
   carbs: 0,
   fat: 3.6,
   servingSize: '100g',
+  emoji: '🍗',
 };
 
 const TODAY = '2026-03-05';
@@ -113,6 +114,32 @@ describe('useFoodLog', () => {
     });
 
     expect(apiAddEntry).toHaveBeenCalledWith(expect.objectContaining({ date: YESTERDAY }));
+  });
+
+  it('addEntry forwards an explicit source (e.g. photo-analyzed entries)', async () => {
+    apiAddEntry.mockImplementation(async (entry) => ({ ...entry, id: 'new-id', loggedAt: 'now' }));
+
+    const { result } = renderHook(() => useFoodLog(TODAY));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.addEntry(chicken, 1, 'photo');
+    });
+
+    expect(apiAddEntry).toHaveBeenCalledWith(expect.objectContaining({ source: 'photo' }));
+  });
+
+  it('addEntry omits source when not given, for ordinary catalog adds', async () => {
+    apiAddEntry.mockImplementation(async (entry) => ({ ...entry, id: 'new-id', loggedAt: 'now' }));
+
+    const { result } = renderHook(() => useFoodLog(TODAY));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.addEntry(chicken, 1);
+    });
+
+    expect(apiAddEntry).toHaveBeenCalledWith(expect.objectContaining({ source: undefined }));
   });
 
   it('sets an error and leaves entries unchanged when addEntry fails', async () => {

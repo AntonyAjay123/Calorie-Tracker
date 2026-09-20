@@ -5,8 +5,8 @@ import type { Food } from '../../types';
 import { FoodGrid } from './FoodGrid';
 
 const foods: Food[] = [
-  { id: 'egg', name: 'Egg', calories: 78, protein: 6.3, carbs: 0.6, fat: 5.3, servingSize: '1 large' },
-  { id: 'banana', name: 'Banana', calories: 105, protein: 1.3, carbs: 27, fat: 0.4, servingSize: '1 medium' },
+  { id: 'egg', name: 'Egg', calories: 78, protein: 6.3, carbs: 0.6, fat: 5.3, servingSize: '1 large', emoji: '🥚' },
+  { id: 'banana', name: 'Banana', calories: 105, protein: 1.3, carbs: 27, fat: 0.4, servingSize: '1 medium', emoji: '🍌' },
 ];
 
 describe('FoodGrid', () => {

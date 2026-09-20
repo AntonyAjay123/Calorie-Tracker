@@ -35,6 +35,18 @@ function stubBackend() {
       return { ok: true, status: 204, url, json: () => Promise.resolve(null) } as Response;
     }
 
+    if (method === 'POST' && url === '/api/analyze-food-image') {
+      return jsonResponse({
+        name: 'Banana',
+        calories: 105,
+        protein: 1.3,
+        carbs: 27,
+        fat: 0.4,
+        serving_size: '1 medium',
+        disclaimer: 'AI estimate.',
+      });
+    }
+
     throw new Error(`Unhandled request in stubBackend: ${method} ${url}`);
   });
 
@@ -52,6 +64,8 @@ async function waitForLogToFinishLoading() {
 describe('App (integration: search -> add -> log display -> totals -> delete -> date navigation)', () => {
   beforeEach(() => {
     stubBackend();
+    URL.createObjectURL = vi.fn(() => 'blob:mock-preview');
+    URL.revokeObjectURL = vi.fn();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 2, 5, 12, 0, 0));
   });
@@ -203,5 +217,29 @@ describe('App (integration: search -> add -> log display -> totals -> delete -> 
     render(<App />);
 
     expect(await screen.findByText(/couldn't reach the server/i)).toBeInTheDocument();
+  });
+
+  it('switching to the Photo tab, analyzing a photo, and adding it logs a photo-sourced entry', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await waitForLogToFinishLoading();
+
+    await user.click(screen.getByRole('button', { name: /^photo$/i }));
+    expect(screen.queryByRole('textbox', { name: /search foods/i })).not.toBeInTheDocument();
+
+    const file = new File(['fake-bytes'], 'plate.jpg', { type: 'image/jpeg' });
+    await user.upload(screen.getByLabelText(/choose a food photo/i), file);
+    await user.click(screen.getByRole('button', { name: /analyze photo/i }));
+
+    await screen.findByText('Banana');
+    await user.click(screen.getByRole('button', { name: /add to log/i }));
+
+    const log = screen.getByRole('heading', { name: 'Log' }).closest('section')!;
+    await within(log).findByText('Banana', { selector: 'p' });
+    await waitFor(() => expect(screen.getByText('105')).toBeInTheDocument());
+
+    // Switching back to Search shows the catalog again, confirming the tabs are independent.
+    await user.click(screen.getByRole('button', { name: /^search$/i }));
+    expect(screen.getByRole('textbox', { name: /search foods/i })).toBeInTheDocument();
   });
 });

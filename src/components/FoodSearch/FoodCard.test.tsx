@@ -12,15 +12,17 @@ const banana: Food = {
   carbs: 27,
   fat: 0.4,
   servingSize: '1 medium',
+  emoji: '🍌',
 };
 
 describe('FoodCard', () => {
-  it('renders the food name, serving size, and macros', () => {
+  it('renders the food name, serving size, macros, and emoji', () => {
     render(<FoodCard food={banana} onAdd={() => {}} />);
     expect(screen.getByText('Banana')).toBeInTheDocument();
     expect(screen.getByText('1 medium')).toBeInTheDocument();
     expect(screen.getByText('105')).toBeInTheDocument();
     expect(screen.getByText('27g')).toBeInTheDocument();
+    expect(screen.getByText('🍌')).toBeInTheDocument();
   });
 
   it('defaults to a quantity of 1 and calls onAdd with the food and quantity', async () => {

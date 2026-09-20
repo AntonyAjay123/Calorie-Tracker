@@ -31,7 +31,7 @@ export function useFoodLog(date: string) {
   }, [date]);
 
   const addEntry = useCallback(
-    async (food: Food, quantity: number) => {
+    async (food: Food, quantity: number, source?: LogEntry['source']) => {
       setError(null);
       try {
         const entry = await apiAddEntry({
@@ -44,6 +44,7 @@ export function useFoodLog(date: string) {
           fat: food.fat * quantity,
           servingSize: food.servingSize,
           date,
+          source,
         });
         setEntries((prev) => [...prev, entry]);
       } catch {

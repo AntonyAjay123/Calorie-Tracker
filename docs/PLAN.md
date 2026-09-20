@@ -4,7 +4,7 @@
 
 A simple, no-login, single-page calorie tracker. Users search or quick-pick from a built-in list of 20+ common foods, add them to a daily log, and see a running calorie/macro total. As shipped in Phases 0-4, everything persists locally across page refreshes via `localStorage` — no accounts, no backend, no database. **Phase 6 changes this**: a small FastAPI + SQLite backend takes over as the source of truth for the daily log, and the app requires that backend running from then on — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
 
-**Status: Phases 0–7 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3), Phase 5 in [PR #4](https://github.com/AntonyAjay123/Calorie-Tracker/pull/4), Phases 6–7 together in [PR #7](https://github.com/AntonyAjay123/Calorie-Tracker/pull/7)). Phases 8–10 (photo upload frontend, food icons, polish) are planned but not yet built — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
+**Status: Phases 0–9 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3), Phase 5 in [PR #4](https://github.com/AntonyAjay123/Calorie-Tracker/pull/4), Phases 6–7 together in [PR #7](https://github.com/AntonyAjay123/Calorie-Tracker/pull/7), Phases 8–9 together in a later PR). Phase 10 (optional polish/guardrails) is planned but not yet built — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
 
 ## Tech Stack
 
@@ -245,26 +245,34 @@ Adds the app's first real backend: a FastAPI service (managed with `uv`, fully t
 
 **Verified:** backend `pytest` — `test_vision.py` covers `_parse_result` directly (valid JSON, malformed JSON, missing fields) and `analyze_food_image` against a fake Anthropic client (`monkeypatch.setattr("app.vision.Anthropic", ...)`, so no real network/API-key use in tests); `test_analyze.py` covers the endpoint's content-type/size validation and both the success and `VisionAnalysisError`-to-502 paths by monkeypatching `app.routers.analyze.analyze_food_image`. No frontend changes yet — Phase 8 is what calls this endpoint from the UI.
 
-### Phase 8 — Photo Upload Frontend ⬜ Not started
+### Phase 8 — Photo Upload Frontend ✅ Complete
 
-- `src/types/index.ts`: add `PhotoAnalysisResult`.
-- `src/hooks/usePhotoAnalysis.ts`: `idle | uploading | success | error` state machine, POSTs the file as `multipart/form-data`, returns the typed result/error.
-- `src/components/PhotoUpload/PhotoUploadPanel.tsx`: file input (`capture="environment"` for mobile camera), preview, Analyze action, loading/error states — reuses existing `ink`/`paper`/`line` design tokens, no new colors.
-- `src/components/PhotoUpload/PhotoResultCard.tsx`: **displays the AI's returned name, calories, and macros before the user acts** (same macro-dot styling as `FoodCard`, plus a quantity stepper). On "Add to log", it calls `useFoodLog`'s `addEntry` with `foodName` set verbatim from the AI's `name` field (no rename step) and the displayed calories/macros scaled by the chosen quantity — which, since Phase 6 already made `useFoodLog`/`addEntry` a generic async log client, needs **no further changes to `useFoodLog` or `storage.ts`** at this point.
-- `App.tsx`: a simple Search/Photo toggle inside "Add Food" — one integration point into `addEntry`, no new page.
-- Client-side validation mirrors the backend's (type/size) for instant feedback before the round-trip.
+- `src/types/index.ts`: added `PhotoAnalysisResult`.
+- `src/lib/photoAnalysis.ts`: `analyzeFoodImage(file)` — the API client for `POST /api/analyze-food-image`; POSTs `multipart/form-data` and maps the backend's snake_case `FoodAnalysisResult` to the frontend's camelCase `PhotoAnalysisResult` (same translation-boundary pattern as `storage.ts`). Also exports `ALLOWED_CONTENT_TYPES`/`MAX_IMAGE_BYTES`, mirroring the backend's own limits for client-side validation. Throws `PhotoAnalysisError` with the backend's `{"detail": "..."}` message when the request fails, so the UI can show a specific reason instead of a bare status code.
+- `src/hooks/usePhotoAnalysis.ts`: `idle | uploading | success | error` state machine wrapping `analyzeFoodImage`, plus a `reset()`.
+- `src/components/PhotoUpload/PhotoUploadPanel.tsx`: hidden file input triggered by a real `<button>` (not a `<label>`, for full keyboard operability), `capture="environment"` for mobile camera, an object-URL preview, an Analyze action, and loading/error states — reuses existing `ink`/`paper`/`line` design tokens, no new colors. Client-side validation mirrors the backend's (type/size) for instant feedback before the round-trip.
+- `src/components/PhotoUpload/PhotoResultCard.tsx`: **displays the AI's returned name, calories, and macros before the user acts** (same macro-dot styling as `FoodCard`, plus a quantity stepper). On "Add to log", it wraps the result into a synthetic `Food` (`foodName` set verbatim from the AI's `name` field — no rename step; `id: 'photo'`, since there's no catalog food to reference) and calls `useFoodLog`'s `addEntry` with a third `source: 'photo'` argument.
+- `App.tsx`: a Search/Photo toggle inside "Add Food" (segmented-button style, matching the sharp-cornered design system) — one integration point into `addEntry`, no new page. After a photo entry is added, `PhotoUploadPanel` resets itself back to its idle state so the next photo can be logged without manual cleanup.
+
+**Deviation from the plan — a small `useFoodLog` change was needed after all:** the plan's Phase 6 write-up said Phase 8 would need "no further changes to `useFoodLog` or `storage.ts`," reasoning that `addEntry` was already a generic async log client. That held for *persistence*, but not for *tagging the entry's origin* — nothing in the Phase 6 shape threaded a `source` value through, so photo-analyzed entries would have silently saved as indistinguishable from catalog ones. Fixed with a minimal, backward-compatible change: `addEntry(food, quantity, source?)` gained a third optional parameter (default `undefined`, i.e. unset — existing catalog callers pass only two arguments and are unaffected); `PhotoResultCard` is the only caller that passes `'photo'`.
 
 **Assumptions:**
 - No photo persisted anywhere, per the confirmed decision above — only the resulting `LogEntry` (via Phase 6's `POST /api/log`) is kept.
 - The quantity stepper pattern from `FoodCard` is reused so a user can scale the AI's estimate (e.g. "1.5x this plate").
+- The synthetic `Food` built from a `PhotoAnalysisResult` uses a fixed camera emoji (📷) rather than a real `Food.emoji`, since there's no catalog entry to draw one from and the AI doesn't return one.
 
-### Phase 9 — Existing Food Item Icons (emoji) ⬜ Not started
+**Verified:** manually end-to-end in a real browser against the real backend and a real (if intentionally trivial) test image — selected a photo, saw the preview, clicked Analyze, got back a real Claude vision result, added it to the log, confirmed via `GET /api/log` that it persisted with `source: "photo"`, and confirmed the panel reset to let another photo be logged. Also exercised the client-side content-type rejection path manually. Automated: `photoAnalysis.test.ts` (wire translation, error-detail extraction), `usePhotoAnalysis.test.ts` (state machine), `PhotoResultCard.test.tsx`, `PhotoUploadPanel.test.tsx` (file selection, client-side validation, analyze success/error, reset-after-add), plus new `useFoodLog.test.ts` cases for the `source` parameter and a new `App.test.tsx` case exercising the Search/Photo toggle end-to-end against a stubbed `/api/analyze-food-image`. 97 frontend tests total (up from 72).
 
-- Extend `Food` with a required `emoji: string`; add one to each of the 24 entries in `src/data/foods.ts`.
-- Render it in `FoodCard.tsx` next to the food name.
+### Phase 9 — Existing Food Item Icons (emoji) ✅ Complete
+
+- Extended `Food` with a required `emoji: string`; added one to each of the 24 entries in `src/data/foods.ts`.
+- Rendered it in `FoodCard.tsx` next to the food name.
 
 **Assumptions:**
 - OS/browser emoji font only — no image assets, no `public/` additions, no licensing concerns, per the confirmed decision above.
+- Unicode has no dedicated glyph for several catalog items (yogurt, tofu, walnuts vs. almonds); picked the closest reasonable stand-in in each case (🫙/🧊/🌰 respectively) rather than leaving them unset — this is a cosmetic judgment call, not a data-accuracy one, and is easy to revisit if a specific choice reads wrong.
+
+**Verified:** `foods.test.ts` (new) asserts every catalog food has a non-empty emoji and that ids stay unique; `FoodCard.test.tsx` extended to assert the emoji renders. Manually confirmed in a real browser that all 24 render as recognizable pictographs next to their names (Chrome/Windows).
 
 ### Phase 10 — Polish & Guardrails (optional, discuss before building) ⬜ Not started
 
