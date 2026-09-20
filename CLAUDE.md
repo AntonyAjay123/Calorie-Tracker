@@ -31,6 +31,10 @@ See [docs/PLAN.md](docs/PLAN.md) for the full architecture and phased build plan
 
 The backend keeps `ANTHROPIC_API_KEY` server-side (it can never safely live in browser code) and proxies the "analyze this photo" call. As of Phase 6, it is **not** stateless overall — it owns the SQLite database that the daily log lives in — but the photo-analysis endpoint specifically stays stateless (the image itself is never written to disk or the database). See **Photo Upload Feature (Technical Design)** below.
 
+### Containerization (optional)
+
+- **Docker** + **Docker Compose** — an alternative to running `npm`/`uv` directly on the host. Not part of any numbered phase (it's tooling, not a feature) — see the Docker section under How to Run below.
+
 ## How to Run
 
 ```bash
@@ -57,6 +61,22 @@ uv run pytest                                # run the backend test suite
 Both the frontend (`npm run dev`) and backend (`uv run fastapi dev ...`) need to be running simultaneously for the photo-upload feature to work — the frontend's Vite dev server proxies `/api/...` requests to the backend (`vite.config.ts`'s `server.proxy`).
 
 > Port note: the backend runs on **8001**, not FastAPI's usual default of 8000. On this dev machine, port 8000 is already occupied by Docker Desktop's WSL2 port-forwarding (`com.docker.backend.exe` / `wslrelay.exe`) for an unrelated project — connecting to `localhost:8000` silently hit that instead of this app, returning a different JSON payload. If you hit something similar on another machine, `uv run fastapi dev app/main.py --port <anything free>` plus updating `vite.config.ts`'s proxy target is all that needs to change.
+
+**Docker (optional, all-in-one)** — runs both services without installing Node/Python/uv on the host:
+
+```bash
+docker compose up --build   # first run, or after changing a Dockerfile/dependency
+docker compose up           # subsequent runs
+docker compose down         # stop and remove the containers
+```
+
+This starts the frontend at `http://localhost:5173` and the backend at `http://localhost:8001`, same ports as running them directly. It's a **dev-oriented** setup, not a production build: both containers run their normal dev commands (`npm run dev`, `uv run fastapi dev --reload`) with the project directory bind-mounted in, so editing code on the host still hot-reloads inside the containers — nothing needs rebuilding for a source change, only for a dependency change (new npm/uv package) or a `Dockerfile` edit.
+
+- `backend`'s container reads `ANTHROPIC_API_KEY` from the repo-root `.env` via Compose's `env_file:` — no separate `backend/.env` needed, consistent with local (non-Docker) dev.
+- `frontend`'s container can't reach the backend via `localhost` (that resolves to the frontend container itself) — `docker-compose.yml` sets `BACKEND_URL=http://backend:8001` so `vite.config.ts`'s proxy target uses Compose's internal DNS instead. Local dev leaves `BACKEND_URL` unset and falls back to `http://localhost:8001`.
+- Each service has its own **named volume** for its dependency directory (`node_modules` / `.venv`) layered over the bind mount, so the container's own build-time install isn't shadowed by whatever (or nothing) exists in that directory on the host.
+- **Gotcha:** Docker Desktop's bind-mounted filesystem doesn't reliably forward native file-change events into Linux containers, so Vite's default watcher can silently miss host-side edits (FastAPI's `watchfiles`-based reloader wasn't affected, only Vite was). `docker-compose.yml` sets `DOCKER=true` for the `frontend` service, which `vite.config.ts` uses to fall back to polling (`server.watch.usePolling`) — only inside Docker; local dev is unaffected.
+- Run tests inside the containers with `docker compose exec backend uv run pytest` / `docker compose exec frontend npm test`.
 
 ## Folder Structure
 
@@ -111,9 +131,14 @@ calorie_tracker/
 ├── package.json
 ├── package-lock.json
 ├── tsconfig.json / tsconfig.app.json / tsconfig.node.json
-├── vite.config.ts                    # registers @vitejs/plugin-react + @tailwindcss/vite; `test` block configures Vitest (defineConfig imported from `vitest/config`, not `vite`); server.proxy forwards /api -> the backend on :8001
+├── vite.config.ts                    # registers @vitejs/plugin-react + @tailwindcss/vite; `test` block configures Vitest (defineConfig imported from `vitest/config`, not `vite`); server.proxy forwards /api -> the backend (BACKEND_URL, default :8001); DOCKER=true enables polling for the watcher
 ├── .oxlintrc.json
+├── Dockerfile                          # frontend image: npm install, bind-mount overrides source at runtime (dev-oriented, no prod build)
+├── docker-compose.yml                  # orchestrates frontend + backend; see How to Run's Docker section
+├── .dockerignore                       # excludes backend/, node_modules/, dist/, .git/, etc. from the frontend build context
 ├── backend/                           # ✅ Phase 5 scaffolded; ⬜ Phase 6+ adds the DB/vision pieces below
+│   ├── Dockerfile                     # backend image: uv sync, bind-mount overrides source at runtime (dev-oriented)
+│   ├── .dockerignore                  # excludes .venv/, __pycache__/, data/, etc. from the backend build context
 │   ├── pyproject.toml                 # uv-managed: fastapi[standard], pydantic-settings, python-multipart (dev: pytest); ⬜ Phase 6+ adds sqlmodel, Phase 7+ adds anthropic
 │   ├── uv.lock
 │   ├── .python-version                # 3.13 (requires-python = ">=3.12")
