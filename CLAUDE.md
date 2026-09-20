@@ -4,7 +4,7 @@
 
 A simple, single-page calorie tracker web app. No login, no accounts. Users search or quick-pick from a built-in list of 20+ common foods (chicken, rice, eggs, banana, etc.), add them to a daily log, and see a running calorie and macro (protein/carbs/fat) total. A date navigator (`‹ Today ›`) lets users page through and log food for previous days too, not just today. **The daily log is persisted server-side in a SQLite database — the backend must be running for the app to work at all**, not just for the photo feature below (see Phase 6 in Build Status).
 
-⬜ **In progress (Phases 8-10):** upload a photo of food and have it automatically analyzed for calories/macros via the Anthropic API. The backend side of this is done — `POST /api/analyze-food-image` (Phase 7 ✅) calls a vision-capable Claude model and returns a typed result — but there's no frontend UI to call it yet. See **Photo Upload Feature (Technical Design)** below.
+✅ Photo upload is live: a "Photo" tab next to food search lets users snap or choose a food photo, see it analyzed by a vision-capable Claude model, review the AI's calorie/macro estimate, and add it to the log. Each catalog food also now shows an emoji next to its name. ⬜ **Remaining (Phase 10, optional):** polish/guardrails — rate limiting, image downscaling, retry UX. See **Photo Upload Feature (Technical Design)** below.
 
 See [docs/PLAN.md](docs/PLAN.md) for the full architecture and phased build plan.
 
@@ -26,7 +26,7 @@ See [docs/PLAN.md](docs/PLAN.md) for the full architecture and phased build plan
 - **FastAPI** — the HTTP API framework
 - **Pydantic v2** + `pydantic-settings` — typed request/response schemas and typed env-var config
 - **SQLite** + **SQLModel** (Phase 6 ✅) — persists the daily log; SQLModel combines a Pydantic schema and a SQLAlchemy table in one class, so there's no separate ORM-model/API-schema duplication
-- **Anthropic Python SDK** (Phase 7 ✅) — calls a vision-capable Claude model to analyze uploaded food photos, via `POST /api/analyze-food-image` (not yet called from the frontend — that's Phase 8)
+- **Anthropic Python SDK** (Phase 7 ✅) — calls a vision-capable Claude model to analyze uploaded food photos, via `POST /api/analyze-food-image`, called from the frontend's `PhotoUploadPanel` (Phase 8 ✅)
 - **Uvicorn** — ASGI server for local dev
 
 The backend keeps `ANTHROPIC_API_KEY` server-side (it can never safely live in browser code) and proxies the "analyze this photo" call. As of Phase 6, it is **not** stateless overall — it owns the SQLite database that the daily log lives in — but the photo-analysis endpoint specifically stays stateless (the image itself is never written to disk or the database). See **Photo Upload Feature (Technical Design)** below.
@@ -98,22 +98,27 @@ calorie_tracker/
 │   │   │   ├── FoodSearchPanel.tsx   # owns search query state + filtering
 │   │   │   ├── SearchBar.tsx         # controlled text input
 │   │   │   ├── FoodGrid.tsx          # renders FoodCard list / empty state
-│   │   │   └── FoodCard.tsx          # macros (with color dots) + quantity stepper + Add button
+│   │   │   └── FoodCard.tsx          # emoji + macros (with color dots) + quantity stepper + Add button
 │   │   ├── Header/
 │   │   │   ├── Header.tsx            # sticky top bar; renders DailyTotals
 │   │   │   └── DailyTotals.tsx       # calories + protein/carbs/fat, pure/presentational
 │   │   ├── DateNav/
 │   │   │   └── DateNav.tsx           # ‹ Today › control; disables "next" at today, shows a Today jump link otherwise
-│   │   └── DailyLog/
-│   │       ├── DailyLog.tsx          # static "Log" heading + LogEntryList (date-agnostic; DateNav carries date context)
-│   │       ├── LogEntryList.tsx      # sorts entries newest-first, renders empty state
-│   │       └── LogEntryRow.tsx       # one entry; delete needs an inline confirm/cancel
+│   │   ├── DailyLog/
+│   │   │   ├── DailyLog.tsx          # "Log" heading + LogEntryList, or a loading/error message (date-agnostic; DateNav carries date context)
+│   │   │   ├── LogEntryList.tsx      # sorts entries newest-first, renders empty state
+│   │   │   └── LogEntryRow.tsx       # one entry; delete needs an inline confirm/cancel
+│   │   └── PhotoUpload/
+│   │       ├── PhotoUploadPanel.tsx  # file select (button-triggered hidden input) + preview + Analyze; owns usePhotoAnalysis
+│   │       └── PhotoResultCard.tsx   # shows the AI's result (name/calories/macros/disclaimer) + quantity stepper + Add to log
 │   ├── data/
-│   │   └── foods.ts                  # static list of 24 common foods
+│   │   └── foods.ts                  # static list of 24 common foods, each with an emoji
 │   ├── hooks/
-│   │   └── useFoodLog.ts             # useFoodLog(date) -> {entries, isLoading, error, addEntry, removeEntry}; async, backed by storage.ts
+│   │   ├── useFoodLog.ts             # useFoodLog(date) -> {entries, isLoading, error, addEntry, removeEntry}; async, backed by storage.ts
+│   │   └── usePhotoAnalysis.ts       # idle|uploading|success|error state machine wrapping lib/photoAnalysis.ts
 │   ├── lib/
-│   │   └── storage.ts                # async fetch client for /api/log; translates snake_case backend JSON <-> camelCase LogEntry
+│   │   ├── storage.ts                # async fetch client for /api/log; translates snake_case backend JSON <-> camelCase LogEntry
+│   │   └── photoAnalysis.ts          # async fetch client for /api/analyze-food-image; same snake_case<->camelCase translation pattern
 │   ├── types/
 │   │   └── index.ts                  # Food, LogEntry types
 │   ├── utils/
@@ -122,14 +127,18 @@ calorie_tracker/
 │   │   └── format.ts                 # round1() for display-rounding macros
 │   ├── test/
 │   │   └── setup.ts                  # jest-dom matchers + RTL auto-cleanup, loaded by vitest
-│   ├── App.test.tsx                  # integration: search -> add -> log display -> totals -> confirm-delete -> date navigation
+│   ├── App.test.tsx                  # integration: search -> add -> log display -> totals -> confirm-delete -> date navigation -> photo tab -> analyze -> add
 │   ├── lib/storage.test.ts           # unit
+│   ├── lib/photoAnalysis.test.ts     # unit (wire translation, error-detail extraction)
+│   ├── data/foods.test.ts            # unit (every food has an emoji, ids unique)
 │   ├── utils/{date,totals,format}.test.ts  # unit
-│   ├── hooks/useFoodLog.test.ts      # unit (includes date-rescoping behavior)
+│   ├── hooks/useFoodLog.test.ts      # unit (includes date-rescoping behavior, the optional `source` param)
+│   ├── hooks/usePhotoAnalysis.test.ts      # unit (idle/uploading/success/error state machine)
 │   ├── components/FoodSearch/*.test.tsx    # component + FoodSearchPanel integration tests
 │   ├── components/Header/*.test.tsx        # component
 │   ├── components/DateNav/DateNav.test.tsx # component (today vs. past-date states, button handlers)
-│   └── components/DailyLog/*.test.tsx      # component (LogEntryRow's confirm flow, LogEntryList's sort/tie-break)
+│   ├── components/DailyLog/*.test.tsx      # component (LogEntryRow's confirm flow, LogEntryList's sort/tie-break, DailyLog's loading/error states)
+│   └── components/PhotoUpload/*.test.tsx   # component (file selection, client-side validation, analyze success/error, reset-after-add)
 ├── public/
 │   └── favicon.svg
 ├── index.html
@@ -144,7 +153,7 @@ calorie_tracker/
 ├── scripts/
 │   ├── start-app.ps1                   # docker compose up -d (or --build -d with -Build); works from any directory
 │   └── stop-app.ps1                    # docker compose down (or down -v with -Volumes); works from any directory
-├── backend/                           # ✅ Phase 5-7: scaffolding, log database, vision endpoint all done; ⬜ Phase 8 wires the frontend to it
+├── backend/                           # ✅ Phase 5-7: scaffolding, log database, vision endpoint — all done, and (Phase 8) called from the frontend
 │   ├── Dockerfile                     # backend image: uv sync, bind-mount overrides source at runtime (dev-oriented)
 │   ├── .dockerignore                  # excludes .venv/, __pycache__/, data/, etc. from the backend build context
 │   ├── pyproject.toml                 # uv-managed: fastapi[standard], pydantic-settings, python-multipart, sqlmodel, anthropic (dev: pytest)
@@ -181,7 +190,7 @@ interface Food {
   carbs: number;        // grams, per serving
   fat: number;          // grams, per serving
   servingSize: string;  // e.g. "100g", "1 medium", "1 cup"
-  emoji: string;         // ⬜ Phase 9 — one per catalog food, e.g. "🍗"; no image assets
+  emoji: string;         // one per catalog food, e.g. "🍗"; no image assets
 }
 
 interface LogEntry {
@@ -196,14 +205,14 @@ interface LogEntry {
   servingSize: string;
   date: string;           // "YYYY-MM-DD"
   loggedAt: string;       // ISO timestamp; stamped server-side, not client-side (avoids client clock skew)
-  source?: 'catalog' | 'photo';  // ⬜ Phase 8 — distinguishes photo-analyzed entries; the DB column exists (Phase 6), but nothing sets it to 'photo' yet since the photo-upload UI isn't built
+  source?: 'catalog' | 'photo';  // distinguishes photo-analyzed entries; omitted for catalog adds, 'photo' for photo-analyzed ones (Phase 8)
 }
 
-// ✅ Phase 7 — returned by the backend's POST /api/analyze-food-image, not persisted as-is.
-// The frontend (⬜ Phase 8) will wrap this into a synthetic Food and pass it through the existing
-// addEntry — since addEntry already talks to the Phase 6 backend API, it becomes a normal
-// LogEntry (with source: 'photo', name saved verbatim from `name` below, calories/macros shown
-// to the user before they submit) with no further changes needed to useFoodLog or storage.ts.
+// Returned by the backend's POST /api/analyze-food-image, not persisted as-is. PhotoResultCard
+// (Phase 8) wraps this into a synthetic Food (source: 'photo', name saved verbatim from `name`
+// below, calories/macros shown to the user before they submit) and passes it through the
+// existing addEntry, which gained a third optional `source` argument for this — see the Photo
+// Upload Feature section below for why that one small addEntry change was needed after all.
 interface PhotoAnalysisResult {
   name: string;
   calories: number;
@@ -231,23 +240,27 @@ Phase 4 replaced the initial generic Tailwind slate/emerald look with a delibera
 
 ## Photo Upload Feature (Technical Design)
 
-✅ Phases 5–7 (backend: scaffolding, log database, vision endpoint) are complete. ⬜ Phases 8–10 (photo-upload frontend, catalog food-emoji icons, polish) are not yet built — see `docs/PLAN.md` for the full phase breakdown. This feature also carried the app's biggest architecture change to date: **Phase 6 moved the daily log's persistence from `localStorage` to a SQLite database behind the backend** — read that part carefully, since it affects every phase after it, not just the photo-upload UI.
+✅ Phases 5–9 (backend scaffolding, log database, vision endpoint, photo-upload frontend, catalog food-emoji icons) are all complete. ⬜ Phase 10 (optional polish/guardrails — rate limiting, image downscaling, retry UX) is not built — see `docs/PLAN.md` for the full phase breakdown. This feature also carried the app's biggest architecture change to date: **Phase 6 moved the daily log's persistence from `localStorage` to a SQLite database behind the backend** — read that part carefully, since it affects every phase after it, not just the photo-upload UI.
 
 **Daily log persistence (Phase 6 ✅):** `GET /api/log?date=...`, `POST /api/log`, `DELETE /api/log/{id}` (`backend/app/routers/log.py`) back onto a SQLite database via **SQLModel** (`backend/app/models.py`'s `LogEntry` class doubles as the DB table and the API schema). The backend assigns `id` (`uuid.uuid4()`) and stamps `logged_at` server-side. `src/lib/storage.ts` was rewritten from a synchronous `localStorage` wrapper into an async `fetch`-based API client (also translating snake_case<->camelCase at the wire boundary — see Data Model above); `src/hooks/useFoodLog.ts` became async and gained `isLoading`/`error` state, since every date change (via `DateNav`) and every add/remove now round-trips to the backend instead of touching an in-memory/localStorage array — `DailyLog` renders a "Loading…" message or the error text in place of the entry list while that's in flight. Quantity × macro scaling stays a frontend computation (in `useFoodLog.addEntry`) — the backend just stores/returns whatever entry it's given. **No migration** of pre-existing browser `localStorage` data (confirmed decision) — SQLite simply started empty. From this phase on, **the app requires the backend running** to function at all, not just for the photo feature.
 
-**Photo analysis endpoint (Phase 7 ✅, backend only):** `POST /api/analyze-food-image` (`backend/app/routers/analyze.py`) accepts `multipart/form-data`, validates content-type (`image/jpeg`/`png`/`webp`, else 415) and size (8MB max, else 413), then calls `backend/app/vision.py`'s `analyze_food_image`, which sends the image to a vision-capable Claude model (`client.messages.create` with the image as a base64 content block) with a system prompt demanding strict JSON, and parses that JSON into a `FoodAnalysisResult` (`backend/app/schemas.py`) — raising `VisionAnalysisError` (-> 502) on malformed JSON, a missing field, or a refusal. Not yet called from anywhere in the frontend.
+**Photo analysis endpoint (Phase 7 ✅):** `POST /api/analyze-food-image` (`backend/app/routers/analyze.py`) accepts `multipart/form-data`, validates content-type (`image/jpeg`/`png`/`webp`, else 415) and size (8MB max, else 413), then calls `backend/app/vision.py`'s `analyze_food_image`, which sends the image to a vision-capable Claude model (`client.messages.create` with the image as a base64 content block) with a system prompt demanding strict JSON, and parses that JSON into a `FoodAnalysisResult` (`backend/app/schemas.py`) — raising `VisionAnalysisError` (-> 502) on malformed JSON, a missing field, or a refusal.
 
-**Photo analysis data flow (⬜ Phase 8, not yet built):** the user will select or capture a photo in `PhotoUploadPanel` → it's POSTed to `/api/analyze-food-image` (same-origin in dev, via Vite's `server.proxy`, which forwards to the FastAPI backend on `:8001`) → the frontend will render the Phase 7 endpoint's result in `PhotoResultCard`, **showing the AI's returned name, calories, and macros to the user before they act** → on "Add to log", the result gets wrapped into a synthetic `Food` (using the AI's `name` verbatim as `foodName` — no rename step) and passed through `useFoodLog().addEntry`, which already talks to the Phase 6 backend API — so Phase 8 needs **no further changes** to `useFoodLog` or `storage.ts` beyond what Phase 6 already did. The result becomes a normal `LogEntry` (tagged `source: 'photo'`) in the same SQLite table as catalog-based entries.
+**Photo analysis data flow (Phase 8 ✅):** the user selects or captures a photo in `PhotoUploadPanel` (a button opens a hidden file input — not a `<label>`, so it stays keyboard-operable — with `capture="environment"` for mobile camera; client-side content-type/size checks mirror the backend's, in `src/lib/photoAnalysis.ts`, before the round-trip) → the file is POSTed via `analyzeFoodImage()` to `/api/analyze-food-image` (same-origin in dev, via Vite's `server.proxy`, which forwards to the FastAPI backend on `:8001`) → the frontend renders the result in `PhotoResultCard`, **showing the AI's returned name, calories, and macros to the user before they act**, alongside its `disclaimer` text → on "Add to log", the result is wrapped into a synthetic `Food` (using the AI's `name` verbatim as `foodName` — no rename step; a fixed 📷 stands in for `emoji`, since there's no catalog entry to draw one from) and passed through `useFoodLog().addEntry(food, quantity, 'photo')`. The result becomes a normal `LogEntry` (tagged `source: 'photo'`) in the same SQLite table as catalog-based entries. `App.tsx` exposes this behind a Search/Photo toggle next to "Add Food"; after a successful add, `PhotoUploadPanel` resets itself so another photo can be logged immediately.
 
-**Statelessness (photo analysis only):** the backend holds the uploaded image in memory only for the duration of one `/api/analyze-food-image` request. Nothing is written to disk or the database for the image itself — per the confirmed decision, the photo is discarded after analysis; only the resulting `LogEntry` (via `POST /api/log`) will be kept once Phase 8 wires this up. This is narrower than it sounds: the backend as a whole is **not** stateless now that Phase 6 has landed (it owns the log's database), only this one endpoint is.
+**Deviation from the plan:** the Phase 6 write-up predicted Phase 8 would need "no further changes to `useFoodLog` or `storage.ts`." That held for persistence, but nothing in the Phase 6 shape threaded a `source` value through — so `useFoodLog.addEntry` gained a third, optional `source?: LogEntry['source']` parameter (default unset; existing catalog callers are unaffected since they still pass only two arguments) to let `PhotoResultCard` tag its adds as `'photo'`.
+
+**Statelessness (photo analysis only):** the backend holds the uploaded image in memory only for the duration of one `/api/analyze-food-image` request. Nothing is written to disk or the database for the image itself — per the confirmed decision, the photo is discarded after analysis; only the resulting `LogEntry` (via `POST /api/log`) is kept. This is narrower than it sounds: the backend as a whole is **not** stateless now that Phase 6 has landed (it owns the log's database), only this one endpoint is.
 
 **Secret handling:** `ANTHROPIC_API_KEY` is read only by the backend process, from the existing repo-root `.env` (not a new `backend/.env` — no reason to duplicate the secret). It is never sent to, or readable by, the frontend bundle.
+
+**Catalog food icons (Phase 9 ✅):** each of the 24 foods in `src/data/foods.ts` has a required `emoji`, rendered next to its name in `FoodCard.tsx`. A few items have no dedicated Unicode glyph (yogurt, tofu, walnuts vs. almonds) — 🫙/🧊/🌰 stand in as the closest reasonable pictographs; this is a cosmetic call, easy to revisit.
 
 ## Docker Containerization (Technical Design)
 
 ✅ Complete — optional tooling, not a numbered phase (see `docs/PLAN.md`). `docker compose up --build` (or `./scripts/start-app.ps1`) runs the whole app without installing Node/Python/uv on the host. Commands are under How to Run above; this section covers why it's built the way it is.
 
-**Scope decision:** dev-oriented, not a production build. Both containers run their normal dev commands (`npm run dev`, `uv run fastapi dev --reload`) rather than a multi-stage build serving compiled output — chosen because the project has no deployment target yet and is still mid-development (Phases 8-10 of the photo-upload feature aren't built). A production Dockerfile would need revisiting once there's somewhere to actually deploy to.
+**Scope decision:** dev-oriented, not a production build. Both containers run their normal dev commands (`npm run dev`, `uv run fastapi dev --reload`) rather than a multi-stage build serving compiled output — chosen because the project has no deployment target yet and is still mid-development (Phase 10 of the photo-upload feature, optional polish, isn't built). A production Dockerfile would need revisiting once there's somewhere to actually deploy to.
 
 **Bind mounts + named volumes:** each service's whole directory is bind-mounted into its container (`.:/app` for frontend, `./backend:/app` for backend) so host-side edits are visible inside immediately — that's what makes hot reload work without rebuilding. The catch: a bind mount at `/app` would also overwrite `/app/node_modules` or `/app/.venv` with whatever (or nothing) exists in that directory on the host, which is either empty or has host-platform-specific binaries incompatible with the Linux container. Each service gets its own **named volume** scoped to just that subdirectory (`frontend-node-modules:/app/node_modules`, `backend-venv:/app/.venv`), which Docker layers on top of the broader bind mount — the container's own build-time `npm install`/`uv sync` output survives, regardless of what's (or isn't) on the host.
 
@@ -261,7 +274,7 @@ Phase 4 replaced the initial generic Tailwind slate/emerald look with a delibera
 
 ## Build Status
 
-Phases 0–7 are implemented (see `docs/PLAN.md` for full phase definitions):
+Phases 0–9 are implemented (see `docs/PLAN.md` for full phase definitions):
 
 - ✅ **Phase 0** — Vite + React + TypeScript + Tailwind CSS v4 scaffolding
 - ✅ **Phase 1** — static food list + live search + quick-add cards
@@ -270,9 +283,9 @@ Phases 0–7 are implemented (see `docs/PLAN.md` for full phase definitions):
 - ✅ **Phase 4** — visual design refresh (see Design System above), a mobile/responsive pass, and multi-day history (`DateNav` + `useFoodLog(date)`)
 - ✅ **Phase 5** — backend scaffolding: `backend/` (FastAPI + uv), `GET /api/health`, fail-fast `Settings`, Vite proxy for `/api`. No AI calls, no database yet. Runs on **port 8001**, not 8000 — see the port note above.
 - ✅ **Phase 6** — daily log database (SQLite via SQLModel) — **retired `localStorage`**; `useFoodLog`/`storage.ts` are now an async API client with loading/error state; the app requires the backend running at all times from this phase on. 22 backend tests (up from 5), 72 frontend tests (up from 66).
-- ✅ **Phase 7** — photo analysis endpoint (Anthropic vision integration): `POST /api/analyze-food-image`, backend-only (no frontend caller yet — that's Phase 8).
-- ⬜ **Phase 8** — photo upload frontend (upload UI + review/add-to-log flow)
-- ⬜ **Phase 9** — emoji icons for the 24 existing catalog foods
+- ✅ **Phase 7** — photo analysis endpoint (Anthropic vision integration): `POST /api/analyze-food-image`.
+- ✅ **Phase 8** — photo upload frontend: `PhotoUploadPanel` + `PhotoResultCard`, wired into `App.tsx` behind a Search/Photo toggle. 97 frontend tests total (up from 72).
+- ✅ **Phase 9** — emoji icons for the 24 existing catalog foods, rendered in `FoodCard`.
 - ⬜ **Phase 10** — polish/guardrails (optional — rate limiting, image downscaling, retry UX)
 
 See **Photo Upload Feature (Technical Design)** above and `docs/PLAN.md` for the full Phase 5-10 breakdown and the decisions confirmed with the user before planning them (one item per photo, no photo persistence, emoji instead of real photos, SQLite replaces `localStorage` with no data migration).
@@ -282,6 +295,12 @@ Notable Phase 6-7 decisions (not fully specified in the original plan, decided d
 - `main.py` uses FastAPI's `lifespan` context manager (not the deprecated `@app.on_event("startup")`) to call `create_db_and_tables()`.
 - Backend tests never touch the real `backend/data/calorie_tracker.db` — `get_session` is overridden per-test to a fresh in-memory SQLite DB (`sqlite://` + `StaticPool`), and the vision/analyze tests monkeypatch the Anthropic client so no real network calls or API key are needed to run `uv run pytest`.
 - `DailyLog` shows a "Loading…" message or the hook's error text in place of the entry list, rather than a spinner overlay or silently showing stale/empty data.
+
+Notable Phase 8-9 decisions (not fully specified in the original plan, decided during implementation):
+- `useFoodLog.addEntry` gained a third, optional `source?: LogEntry['source']` parameter so photo-analyzed entries can be tagged `'photo'` — see the Photo Upload Feature section's "Deviation from the plan" above.
+- The file-picker button in `PhotoUploadPanel` is a real `<button>` that calls `inputRef.current?.click()`, not a `<label htmlFor>` wrapping a visually-hidden input — a plain `<label>` isn't keyboard-focusable by default, so a button keeps the control fully keyboard-operable.
+- A synthetic `Food` built from a photo result uses a fixed 📷 for `emoji` (no catalog entry to draw a real one from) and `id: 'photo'` (no catalog id applies either — `foodId` is descriptive metadata, not a foreign key).
+- Verified end-to-end manually against the real backend and a real (deliberately trivial, 1x1-pixel) test image in a live browser — confirmed via `GET /api/log` that the added entry persisted with `source: "photo"` — in addition to the automated suite, since this is the app's first real external-API integration.
 
 Notable Phase 3 decisions (confirmed with the user before building):
 - Log entries display **newest-added first**. `LogEntryList` reverses the array before a stable sort by `loggedAt` so that two entries added in the same millisecond still resolve to newest-first (a real tie-breaking bug caught by the test suite while building this — see `LogEntryList.test.tsx`).

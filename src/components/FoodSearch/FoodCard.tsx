@@ -21,7 +21,9 @@ export function FoodCard({ food, onAdd }: FoodCardProps) {
   return (
     <div className="flex flex-col justify-between border border-line bg-paper p-4">
       <div>
-        <h3 className="font-semibold text-ink">{food.name}</h3>
+        <h3 className="font-semibold text-ink">
+          <span aria-hidden>{food.emoji}</span> {food.name}
+        </h3>
         <p className="text-sm text-ink-muted">{food.servingSize}</p>
         <dl className="mt-3 flex gap-4 text-xs tabular-nums">
           <div>
