@@ -33,7 +33,7 @@ The backend keeps `ANTHROPIC_API_KEY` server-side (it can never safely live in b
 
 ### Containerization (optional)
 
-- **Docker** + **Docker Compose** — an alternative to running `npm`/`uv` directly on the host. Not part of any numbered phase (it's tooling, not a feature) — see the Docker section under How to Run below.
+- **Docker** + **Docker Compose** — an alternative to running `npm`/`uv` directly on the host. Not part of any numbered phase (it's tooling, not a feature). Commands under How to Run below; design rationale in **Docker Containerization (Technical Design)**.
 
 ## How to Run
 
@@ -70,7 +70,7 @@ docker compose up           # subsequent runs
 docker compose down         # stop and remove the containers
 ```
 
-Or via the convenience PowerShell scripts (repo root; work from any directory, not just the repo root):
+Or via the convenience PowerShell scripts in `scripts/` (work from any directory, not just the repo root):
 
 ```powershell
 ./scripts/start-app.ps1          # docker compose up -d
@@ -79,13 +79,9 @@ Or via the convenience PowerShell scripts (repo root; work from any directory, n
 ./scripts/stop-app.ps1 -Volumes  # docker compose down -v, also clears the node_modules/.venv volumes
 ```
 
-This starts the frontend at `http://localhost:5173` and the backend at `http://localhost:8001`, same ports as running them directly. It's a **dev-oriented** setup, not a production build: both containers run their normal dev commands (`npm run dev`, `uv run fastapi dev --reload`) with the project directory bind-mounted in, so editing code on the host still hot-reloads inside the containers — nothing needs rebuilding for a source change, only for a dependency change (new npm/uv package) or a `Dockerfile` edit.
+This starts the frontend at `http://localhost:5173` and the backend at `http://localhost:8001`, same ports as running them directly. It's a **dev-oriented** setup, not a production build — see **Docker Containerization (Technical Design)** below for why it's built this way (bind mounts vs. named volumes, cross-container networking, secret handling, and two real gotchas hit while setting it up).
 
-- `backend`'s container reads `ANTHROPIC_API_KEY` from the repo-root `.env` via Compose's `env_file:` — no separate `backend/.env` needed, consistent with local (non-Docker) dev.
-- `frontend`'s container can't reach the backend via `localhost` (that resolves to the frontend container itself) — `docker-compose.yml` sets `BACKEND_URL=http://backend:8001` so `vite.config.ts`'s proxy target uses Compose's internal DNS instead. Local dev leaves `BACKEND_URL` unset and falls back to `http://localhost:8001`.
-- Each service has its own **named volume** for its dependency directory (`node_modules` / `.venv`) layered over the bind mount, so the container's own build-time install isn't shadowed by whatever (or nothing) exists in that directory on the host.
-- **Gotcha:** Docker Desktop's bind-mounted filesystem doesn't reliably forward native file-change events into Linux containers, so Vite's default watcher can silently miss host-side edits (FastAPI's `watchfiles`-based reloader wasn't affected, only Vite was). `docker-compose.yml` sets `DOCKER=true` for the `frontend` service, which `vite.config.ts` uses to fall back to polling (`server.watch.usePolling`) — only inside Docker; local dev is unaffected.
-- Run tests inside the containers with `docker compose exec backend uv run pytest` / `docker compose exec frontend npm test`.
+Run tests inside the containers with `docker compose exec backend uv run pytest` / `docker compose exec frontend npm test`.
 
 ## Folder Structure
 
@@ -244,6 +240,22 @@ Phase 4 replaced the initial generic Tailwind slate/emerald look with a delibera
 **Statelessness (photo analysis only):** the backend holds the uploaded image in memory only for the duration of one `/api/analyze-food-image` request. Nothing is written to disk or the database for the image itself — per the confirmed decision, the photo is discarded after analysis; only the resulting `LogEntry` (via `POST /api/log`) is kept. This is narrower than it sounds: the backend as a whole is **not** stateless once Phase 6 lands (it owns the log's database), only this one endpoint is.
 
 **Secret handling:** `ANTHROPIC_API_KEY` is read only by the backend process, from the existing repo-root `.env` (not a new `backend/.env` — no reason to duplicate the secret). It is never sent to, or readable by, the frontend bundle.
+
+## Docker Containerization (Technical Design)
+
+✅ Complete — optional tooling, not a numbered phase (see `docs/PLAN.md`). `docker compose up --build` (or `./scripts/start-app.ps1`) runs the whole app without installing Node/Python/uv on the host. Commands are under How to Run above; this section covers why it's built the way it is.
+
+**Scope decision:** dev-oriented, not a production build. Both containers run their normal dev commands (`npm run dev`, `uv run fastapi dev --reload`) rather than a multi-stage build serving compiled output — chosen because the project has no deployment target yet and is still mid-development (Phases 6-10 of the photo-upload feature aren't built). A production Dockerfile would need revisiting once there's somewhere to actually deploy to.
+
+**Bind mounts + named volumes:** each service's whole directory is bind-mounted into its container (`.:/app` for frontend, `./backend:/app` for backend) so host-side edits are visible inside immediately — that's what makes hot reload work without rebuilding. The catch: a bind mount at `/app` would also overwrite `/app/node_modules` or `/app/.venv` with whatever (or nothing) exists in that directory on the host, which is either empty or has host-platform-specific binaries incompatible with the Linux container. Each service gets its own **named volume** scoped to just that subdirectory (`frontend-node-modules:/app/node_modules`, `backend-venv:/app/.venv`), which Docker layers on top of the broader bind mount — the container's own build-time `npm install`/`uv sync` output survives, regardless of what's (or isn't) on the host.
+
+**Cross-container networking:** `vite.config.ts`'s dev proxy target is configurable via a `BACKEND_URL` env var instead of being hardcoded to `localhost:8001`. Inside Docker Compose, `localhost` from the frontend container's perspective is the frontend container itself — the backend is a separate container, reachable only via Compose's internal DNS at its service name (`http://backend:8001`). `docker-compose.yml` sets `BACKEND_URL=http://backend:8001` for the frontend service; local (non-Docker) dev leaves it unset and falls back to `http://localhost:8001`, so the same `vite.config.ts` works in both contexts.
+
+**Secret handling:** the backend container reads `ANTHROPIC_API_KEY` from the existing repo-root `.env` via Compose's `env_file:` directive — no separate `backend/.env`, consistent with local dev. (`backend/app/config.py`'s `ROOT_ENV_FILE` path, which walks up from `__file__` to find the repo root, doesn't actually resolve correctly inside the container's `/app` directory structure — but it doesn't need to: Compose injects the variable as a real process environment variable, and `pydantic-settings` reads directly from `os.environ` regardless of whether its configured `env_file` path exists. Verified by confirming the backend container's fail-fast startup check passed.)
+
+**Two real issues found during manual verification, not assumed away:**
+- **File-watching over bind mounts:** Docker Desktop doesn't reliably forward native filesystem change events into Linux containers for host-side edits. FastAPI's `watchfiles`-based reloader handled this fine (confirmed via a live edit to `app/main.py`), but Vite's default watcher silently missed changes — editing `src/App.tsx` on the host produced no visible update in the browser until a hard refresh happened to fetch the since-updated module directly. Fixed by gating Vite's `server.watch.usePolling` behind a `DOCKER=true` env var, set only by `docker-compose.yml`'s frontend service; local dev is unaffected.
+- **Port 8000 conflict, reconfirmed:** this dev machine has an unrelated Docker container already bound to host port 8000 (a different, unrelated project) — the same conflict Phase 5 found when running the backend directly outside Docker. It's why the backend's container also maps to port 8001, not 8000.
 
 ## Build Status
 
