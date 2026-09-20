@@ -4,7 +4,7 @@
 
 A simple, no-login, single-page calorie tracker. Users search or quick-pick from a built-in list of 20+ common foods, add them to a daily log, and see a running calorie/macro total. As shipped in Phases 0-4, everything persists locally across page refreshes via `localStorage` — no accounts, no backend, no database. **Phase 6 changes this**: a small FastAPI + SQLite backend takes over as the source of truth for the daily log, and the app requires that backend running from then on — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
 
-**Status: Phases 0–7 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3), Phase 5 in [PR #4](https://github.com/AntonyAjay123/Calorie-Tracker/pull/4), Phases 6–7 together in a later PR). Phases 8–10 (photo upload frontend, food icons, polish) are planned but not yet built — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
+**Status: Phases 0–7 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3), Phase 5 in [PR #4](https://github.com/AntonyAjay123/Calorie-Tracker/pull/4), Phases 6–7 together in [PR #7](https://github.com/AntonyAjay123/Calorie-Tracker/pull/7)). Phases 8–10 (photo upload frontend, food icons, polish) are planned but not yet built — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
 
 ## Tech Stack
 
