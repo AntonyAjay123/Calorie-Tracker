@@ -77,9 +77,9 @@ calorie_tracker/
 │   ├── App.tsx
 │   ├── index.css
 │   ├── components/
-│   │   ├── Header/           # ⬜ Phase 3
+│   │   ├── Header/           # ✅ Header (sticky) + DailyTotals
 │   │   ├── FoodSearch/       # ✅ built — FoodSearchPanel, SearchBar, FoodGrid, FoodCard
-│   │   └── DailyLog/         # ⬜ Phase 3
+│   │   └── DailyLog/         # ✅ DailyLog + LogEntryList + LogEntryRow
 │   ├── data/
 │   │   └── foods.ts        # ✅ 24 common foods
 │   ├── hooks/
@@ -145,9 +145,9 @@ Each phase should be implemented and verified (in a browser) before moving to th
 
 **Verified:** `npm run build` and `npm run lint` pass clean; manually tested in a real browser — search filtering, quantity stepper, Add action, and that a logged entry survives a page refresh (read back correctly from `localStorage`).
 
-Known gap carried into Phase 3: there's no UI feedback or visible log yet when an item is added — only Phase 3's `DailyLog`/`Header` components will surface it.
+The gap noted above (no visible log/feedback when adding) is resolved by Phase 3 below.
 
-### Phase 3 — Daily Log Display + Calorie/Macro Totals ⬜ Not started
+### Phase 3 — Daily Log Display + Calorie/Macro Totals ✅ Complete
 
 - Build `DailyLog` / `LogEntryList` / `LogEntryRow` to render today's entries with a delete action per row.
 - Build `Header` / `DailyTotals` to compute and display the running total (calories, protein, carbs, fat) from today's entries, updating reactively on add/delete.
@@ -155,6 +155,12 @@ Known gap carried into Phase 3: there's no UI feedback or visible log yet when a
 **Assumptions:**
 - No calorie goal/target — just a running total, since none was requested.
 - Totals recompute client-side on every state change; no memoization needed at this scale.
+
+**Decisions confirmed with the user before building (not fully specified in the original plan above):**
+- Entries display **newest-added first**, not chronological/oldest-first.
+- Delete requires an inline **confirm/cancel** step, not immediate deletion and not a native `window.confirm` (kept out as a blocking, legacy-feeling pattern).
+
+**Verified:** `npm run build`, `npm run lint`, and `npm test` (48 tests) all pass; manually tested in a real browser — totals update correctly on add/remove, entries sort newest-first, delete requires confirm, and everything survives a page refresh. Writing the tests surfaced and fixed a real bug: two entries sharing an identical `loggedAt` (e.g. added in the same millisecond) weren't guaranteed to sort newest-first — `LogEntryList` now reverses before its stable sort to fix this.
 
 ### Phase 4 — Polish & Stretch (optional, discuss before building) ⬜ Not started
 
