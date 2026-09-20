@@ -4,7 +4,7 @@
 
 A simple, single-page calorie tracker web app. No login, no accounts. Users search or quick-pick from a built-in list of 20+ common foods (chicken, rice, eggs, banana, etc.), add them to a daily log, and see a running calorie and macro (protein/carbs/fat) total. A date navigator (`‹ Today ›`) lets users page through and log food for previous days too, not just today. The log persists locally across page refreshes via `localStorage` — there is no database.
 
-⬜ **Planned (Phases 5-10, not built yet):** upload a photo of food and have it automatically analyzed for calories/macros via the Anthropic API. This is the app's first real backend — FastAPI + SQLite. Starting at Phase 6, the backend also becomes the **source of truth for the daily log** (replacing `localStorage`), so the app will require the backend running at all times, not just for the photo feature. See **Photo Upload Feature (Technical Design)** below.
+⬜ **In progress (Phases 5-10):** upload a photo of food and have it automatically analyzed for calories/macros via the Anthropic API. This is the app's first real backend — FastAPI + SQLite (✅ Phase 5 scaffolding is done; the app doesn't do anything with the backend yet). Starting at Phase 6, the backend will become the **source of truth for the daily log** (replacing `localStorage`), so the app will require the backend running at all times, not just for the photo feature. See **Photo Upload Feature (Technical Design)** below.
 
 See [docs/PLAN.md](docs/PLAN.md) for the full architecture and phased build plan.
 
@@ -45,15 +45,18 @@ npm run test:watch  # run the test suite in watch mode
 
 > Node note: Vitest 5 declares an engines range of `^22.12.0 || ^24.0.0 || >=26.0.0`. This project has been developed and verified on Node v23.11.0, which falls outside that range — `npm install` prints an `EBADENGINE` warning, but the full suite (`build`, `lint`, `test`) runs correctly on it in practice. If you hit real Vitest issues, try Node 22 or 24 LTS first.
 
-**Backend (Phase 5+, once built)** — runs as a second process, separate terminal:
+**Backend (Phase 5+)** — runs as a second process, separate terminal:
 
 ```bash
 cd backend
-uv sync              # install backend dependencies
-uv run fastapi dev   # start the backend dev server (http://localhost:8000)
+uv sync                                      # install backend dependencies
+uv run fastapi dev app/main.py --port 8001   # start the backend dev server (http://localhost:8001)
+uv run pytest                                # run the backend test suite
 ```
 
-Both the frontend (`npm run dev`) and backend (`uv run fastapi dev`) need to be running simultaneously for the photo-upload feature to work — the frontend's Vite dev server proxies `/api/...` requests to the backend.
+Both the frontend (`npm run dev`) and backend (`uv run fastapi dev ...`) need to be running simultaneously for the photo-upload feature to work — the frontend's Vite dev server proxies `/api/...` requests to the backend (`vite.config.ts`'s `server.proxy`).
+
+> Port note: the backend runs on **8001**, not FastAPI's usual default of 8000. On this dev machine, port 8000 is already occupied by Docker Desktop's WSL2 port-forwarding (`com.docker.backend.exe` / `wslrelay.exe`) for an unrelated project — connecting to `localhost:8000` silently hit that instead of this app, returning a different JSON payload. If you hit something similar on another machine, `uv run fastapi dev app/main.py --port <anything free>` plus updating `vite.config.ts`'s proxy target is all that needs to change.
 
 ## Folder Structure
 
@@ -108,22 +111,25 @@ calorie_tracker/
 ├── package.json
 ├── package-lock.json
 ├── tsconfig.json / tsconfig.app.json / tsconfig.node.json
-├── vite.config.ts                    # registers @vitejs/plugin-react + @tailwindcss/vite; `test` block configures Vitest (defineConfig imported from `vitest/config`, not `vite`); Phase 5+ adds server.proxy for /api -> the backend
+├── vite.config.ts                    # registers @vitejs/plugin-react + @tailwindcss/vite; `test` block configures Vitest (defineConfig imported from `vitest/config`, not `vite`); server.proxy forwards /api -> the backend on :8001
 ├── .oxlintrc.json
-├── backend/                           # ⬜ Phase 5+ — planned, not yet built
-│   ├── pyproject.toml                 # uv-managed: fastapi, uvicorn, pydantic, pydantic-settings, sqlmodel, anthropic, python-multipart
+├── backend/                           # ✅ Phase 5 scaffolded; ⬜ Phase 6+ adds the DB/vision pieces below
+│   ├── pyproject.toml                 # uv-managed: fastapi[standard], pydantic-settings, python-multipart (dev: pytest); ⬜ Phase 6+ adds sqlmodel, Phase 7+ adds anthropic
+│   ├── uv.lock
+│   ├── .python-version                # 3.13 (requires-python = ">=3.12")
 │   ├── data/                          # ⬜ Phase 6+ — gitignored; holds calorie_tracker.db (SQLite file, real user data)
 │   ├── app/
-│   │   ├── main.py                    # FastAPI app, CORS middleware, GET /api/health, includes the log + analyze routers
-│   │   ├── config.py                  # Settings: reads ANTHROPIC_API_KEY / ANTHROPIC_MODEL from the root .env
+│   │   ├── __init__.py
+│   │   ├── main.py                    # ✅ FastAPI app, CORS (any localhost port), GET /api/health; ⬜ Phase 6+/7+ include the log + analyze routers
+│   │   ├── config.py                  # ✅ Settings/get_settings(): reads ANTHROPIC_API_KEY / ANTHROPIC_MODEL from the root .env; fails fast if the key is missing
 │   │   ├── db.py                      # ⬜ Phase 6+ — SQLite engine + session setup; creates tables on startup
 │   │   ├── models.py                  # ⬜ Phase 6+ — SQLModel LogEntry table (doubles as the API schema)
 │   │   ├── routers/
 │   │   │   └── log.py                 # ⬜ Phase 6+ — GET/POST /api/log, DELETE /api/log/{id}
 │   │   ├── schemas.py                 # ⬜ Phase 7+ — Pydantic: FoodAnalysisResult + typed error response
 │   │   └── vision.py                  # ⬜ Phase 7+ — builds the Anthropic vision call, validates the strict-JSON response
-│   └── tests/                         # pytest: FastAPI TestClient + temp/in-memory SQLite for log CRUD, mocked Anthropic client for vision
-├── .env                                # already holds ANTHROPIC_API_KEY, read only by the backend once it exists
+│   └── tests/                         # ✅ test_config.py, test_health.py; ⬜ Phase 6+ adds log CRUD tests (temp/in-memory SQLite), Phase 7+ adds mocked-Anthropic vision tests
+├── .env                                # already holds ANTHROPIC_API_KEY, read by the backend
 ├── .gitignore                          # covers Python/uv artifacts from the original scaffold; ⬜ Phase 6+ needs a new entry for backend/data/
 └── CLAUDE.md
 ```
@@ -196,7 +202,7 @@ Phase 4 replaced the initial generic Tailwind slate/emerald look with a delibera
 
 **Daily log persistence (Phase 6, done before any AI work):** `GET /api/log?date=...`, `POST /api/log`, `DELETE /api/log/{id}` back onto a SQLite database via **SQLModel** (one class doubles as the DB table and the API schema). The backend assigns `id` (`uuid.uuid4()`) and stamps `loggedAt` server-side. `src/lib/storage.ts` is rewritten from a synchronous `localStorage` wrapper into an async `fetch`-based API client; `src/hooks/useFoodLog.ts` becomes async and gains loading/error state, since every date change (via `DateNav`) and every add/remove now round-trips to the backend instead of touching an in-memory/localStorage array. Quantity × macro scaling stays a frontend computation — the backend just stores/returns whatever entry it's given. **No migration** of pre-existing browser `localStorage` data (confirmed decision) — SQLite simply starts empty. From this phase on, **the app requires the backend running** to function at all, not just for the photo feature.
 
-**Photo analysis data flow (Phase 7-8, built on top of the above):** the user selects or captures a photo in `PhotoUploadPanel` → it's POSTed as `multipart/form-data` to `/api/analyze-food-image` (same-origin in dev, via Vite's `server.proxy`, which forwards to the FastAPI backend on `:8000`) → the backend sends the image to a vision-capable Claude model with a prompt demanding strict JSON matching `FoodAnalysisResult` → the backend validates that JSON with Pydantic and returns it (or a typed error) → the frontend renders it in `PhotoResultCard`, **showing the AI's returned name, calories, and macros to the user before they act** → on "Add to log", the result is wrapped into a synthetic `Food` (using the AI's `name` verbatim as `foodName` — no rename step) and passed through `useFoodLog().addEntry`, which by this point already talks to the Phase 6 backend API — so Phase 8 needs **no further changes** to `useFoodLog` or `storage.ts` beyond what Phase 6 already did. The result becomes a normal `LogEntry` (tagged `source: 'photo'`) in the same SQLite table as catalog-based entries.
+**Photo analysis data flow (Phase 7-8, built on top of the above):** the user selects or captures a photo in `PhotoUploadPanel` → it's POSTed as `multipart/form-data` to `/api/analyze-food-image` (same-origin in dev, via Vite's `server.proxy`, which forwards to the FastAPI backend on `:8001`) → the backend sends the image to a vision-capable Claude model with a prompt demanding strict JSON matching `FoodAnalysisResult` → the backend validates that JSON with Pydantic and returns it (or a typed error) → the frontend renders it in `PhotoResultCard`, **showing the AI's returned name, calories, and macros to the user before they act** → on "Add to log", the result is wrapped into a synthetic `Food` (using the AI's `name` verbatim as `foodName` — no rename step) and passed through `useFoodLog().addEntry`, which by this point already talks to the Phase 6 backend API — so Phase 8 needs **no further changes** to `useFoodLog` or `storage.ts` beyond what Phase 6 already did. The result becomes a normal `LogEntry` (tagged `source: 'photo'`) in the same SQLite table as catalog-based entries.
 
 **Statelessness (photo analysis only):** the backend holds the uploaded image in memory only for the duration of one `/api/analyze-food-image` request. Nothing is written to disk or the database for the image itself — per the confirmed decision, the photo is discarded after analysis; only the resulting `LogEntry` (via `POST /api/log`) is kept. This is narrower than it sounds: the backend as a whole is **not** stateless once Phase 6 lands (it owns the log's database), only this one endpoint is.
 
@@ -204,14 +210,14 @@ Phase 4 replaced the initial generic Tailwind slate/emerald look with a delibera
 
 ## Build Status
 
-Phases 0–4 are implemented (see `docs/PLAN.md` for full phase definitions):
+Phases 0–5 are implemented (see `docs/PLAN.md` for full phase definitions):
 
 - ✅ **Phase 0** — Vite + React + TypeScript + Tailwind CSS v4 scaffolding
 - ✅ **Phase 1** — static food list + live search + quick-add cards
 - ✅ **Phase 2** — `localStorage`-backed log persistence, quantity stepper wired to `addEntry`
 - ✅ **Phase 3** — sticky `Header` with running calorie/macro totals, `DailyLog` listing today's entries newest-first with a confirm-before-delete action
 - ✅ **Phase 4** — visual design refresh (see Design System above), a mobile/responsive pass, and multi-day history (`DateNav` + `useFoodLog(date)`)
-- ⬜ **Phase 5** — backend scaffolding (FastAPI + uv, no AI calls yet)
+- ✅ **Phase 5** — backend scaffolding: `backend/` (FastAPI + uv), `GET /api/health`, fail-fast `Settings`, Vite proxy for `/api`. No AI calls, no database yet. Runs on **port 8001**, not 8000 — see the port note above.
 - ⬜ **Phase 6** — daily log database (SQLite via SQLModel) — **retires `localStorage`**, `useFoodLog`/`storage.ts` become an async API client; the app will require the backend running at all times from this phase on
 - ⬜ **Phase 7** — photo analysis endpoint (Anthropic vision integration)
 - ⬜ **Phase 8** — photo upload frontend (upload UI + review/add-to-log flow)
