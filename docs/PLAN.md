@@ -4,7 +4,7 @@
 
 A simple, no-login, single-page calorie tracker. Users search or quick-pick from a built-in list of 20+ common foods, add them to a daily log, and see a running calorie/macro total. Everything persists locally across page refreshes — no backend, no accounts.
 
-**Status: Phases 0–4 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in PR #3). See the [Phases](#phases) section below for per-phase status and how Phase 4's actual scope was narrowed down from the options listed there.
+**Status: Phases 0–4 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3)). See the [Phases](#phases) section below for per-phase status and how Phase 4's actual scope was narrowed down from the options listed there.
 
 ## Tech Stack
 
