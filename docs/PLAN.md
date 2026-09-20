@@ -4,7 +4,7 @@
 
 A simple, no-login, single-page calorie tracker. Users search or quick-pick from a built-in list of 20+ common foods, add them to a daily log, and see a running calorie/macro total. As shipped in Phases 0-4, everything persists locally across page refreshes via `localStorage` — no accounts, no backend, no database. **Phase 6 changes this**: a small FastAPI + SQLite backend takes over as the source of truth for the daily log, and the app requires that backend running from then on — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
 
-**Status: Phases 0–4 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3)). Phases 5–10 (a SQLite-backed daily log, photo upload + AI calorie analysis, plus food icons) are planned but not yet built — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
+**Status: Phases 0–5 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3), Phase 5 in [PR #4](https://github.com/AntonyAjay123/Calorie-Tracker/pull/4)). Phases 6–10 (a SQLite-backed daily log, photo upload + AI calorie analysis, plus food icons) are planned but not yet built — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
 
 ## Tech Stack
 
@@ -197,16 +197,20 @@ Adds the app's first real backend: a FastAPI service (managed with `uv`, fully t
 - **Food name & calories, made explicit**: the AI's returned `name` is saved verbatim as the log entry's `foodName` — no user renaming step. The AI's returned calories (and protein/carbs/fat) are shown to the user in `PhotoResultCard` *before* they click "Add to log", not just after.
 - "Python-typescript" in the original request is interpreted as **fully-typed Python** (type hints throughout + Pydantic/SQLModel models) — what `uv` + FastAPI naturally support, not a literal TypeScript backend.
 
-### Phase 5 — Backend Scaffolding (FastAPI + uv) ⬜ Not started
+### Phase 5 — Backend Scaffolding (FastAPI + uv) ✅ Complete
 
-- Create `backend/` (sibling to `src/`): `backend/pyproject.toml` (FastAPI, Uvicorn, Pydantic v2, `pydantic-settings`, `python-multipart`), `backend/app/main.py` (FastAPI instance, CORS middleware, `GET /api/health`), `backend/app/config.py` (`Settings` loading `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` from the root `.env`).
-- Add `server.proxy` for `/api` to `vite.config.ts` so the frontend can call same-origin `/api/...` in dev.
+- Created `backend/` (sibling to `src/`), scaffolded with `uv init --app`: `backend/pyproject.toml` (`fastapi[standard]`, `pydantic-settings`, `python-multipart`; dev: `pytest`), `backend/app/main.py` (FastAPI instance, CORS middleware restricted to `http://localhost:<any port>`, `GET /api/health`), `backend/app/config.py` (`Settings`/`get_settings()` loading `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` from the root `.env`).
+- Added `server.proxy` for `/api` to `vite.config.ts` so the frontend can call same-origin `/api/...` in dev.
 - No AI calls, no database yet — this phase only proves the two processes can talk to each other.
 
 **Assumptions:**
 - Local dev only (no deployment/hosting config in this phase).
-- Python 3.12+, managed entirely by `uv` (`uv sync`, `uv run`) — no pip/poetry.
-- App fails fast at startup if `ANTHROPIC_API_KEY` is missing, rather than failing silently on first upload.
+- Python 3.12+ (`requires-python = ">=3.12"`; developed against 3.13.9), managed entirely by `uv` (`uv sync`, `uv run`) — no pip/poetry.
+- App fails fast at startup if `ANTHROPIC_API_KEY` is missing (`Settings` has no default for it, so `pydantic-settings` raises immediately), rather than failing silently on first upload — verified by a test that clears the env var and asserts a `ValidationError`.
+
+**Deviation from the plan — backend runs on port 8001, not 8000:** on this dev machine, port 8000 is already bound by Docker Desktop's WSL2 port-forwarding (`com.docker.backend.exe`/`wslrelay.exe`) for an unrelated project. Connecting to `localhost:8000` silently hit that container instead of this app (it returned a different JSON payload, `{"status":"ok","db":"ok"}`, which is how the conflict was caught). `vite.config.ts`'s proxy target and the documented run command both point at `:8001` instead — see the port note in `CLAUDE.md` → How to Run.
+
+**Verified:** `uv run pytest` (5 tests: `Settings` fail-fast/defaults/override, `/api/health`) passes; `uv run fastapi dev app/main.py --port 8001` boots cleanly and `curl http://127.0.0.1:8001/api/health` returns `{"status":"ok"}`; with the frontend dev server also running, `curl http://localhost:5173/api/health` returns the same response, confirming the Vite proxy reaches the backend end-to-end. Frontend `npm run build`/`lint`/`test` (66 tests) still pass unaffected by the `vite.config.ts` change.
 
 ### Phase 6 — Daily Log Database (SQLite) ⬜ Not started
 
