@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A simple, single-page calorie tracker web app. No login, no accounts. Users search or quick-pick from a built-in list of 20+ common foods (chicken, rice, eggs, banana, etc.), add them to a daily log, and see a running calorie and macro (protein/carbs/fat) total. The log persists locally across page refreshes via `localStorage` — there is no backend or external database.
+A simple, single-page calorie tracker web app. No login, no accounts. Users search or quick-pick from a built-in list of 20+ common foods (chicken, rice, eggs, banana, etc.), add them to a daily log, and see a running calorie and macro (protein/carbs/fat) total. A date navigator (`‹ Today ›`) lets users page through and log food for previous days too, not just today. The log persists locally across page refreshes via `localStorage` — there is no backend or external database.
 
 See [docs/PLAN.md](docs/PLAN.md) for the full architecture and phased build plan.
 
@@ -14,6 +14,7 @@ See [docs/PLAN.md](docs/PLAN.md) for the full architecture and phased build plan
 - **localStorage** — client-side persistence (no backend)
 - **oxlint** — linting (bundled by the Vite scaffold)
 - **Vitest** + **React Testing Library** + `jsdom` — unit/component/integration testing
+- **Archivo** (Google Fonts) — the app's one type family; see Design System below
 
 ## How to Run
 
@@ -37,41 +38,44 @@ calorie_tracker/
 │   └── PLAN.md              # architecture + phased implementation plan
 ├── src/
 │   ├── main.tsx
-│   ├── App.tsx                       # renders FoodSearchPanel, wires up useFoodLog
-│   ├── index.css                     # Tailwind entry (`@import "tailwindcss"`)
+│   ├── App.tsx                       # owns selectedDate state; wires DateNav + useFoodLog(date) into Header/FoodSearchPanel/DailyLog
+│   ├── index.css                     # Tailwind entry + `@theme` design tokens (colors, font)
 │   ├── components/
 │   │   ├── FoodSearch/
 │   │   │   ├── FoodSearchPanel.tsx   # owns search query state + filtering
 │   │   │   ├── SearchBar.tsx         # controlled text input
 │   │   │   ├── FoodGrid.tsx          # renders FoodCard list / empty state
-│   │   │   └── FoodCard.tsx          # macros + quantity stepper + Add button
+│   │   │   └── FoodCard.tsx          # macros (with color dots) + quantity stepper + Add button
 │   │   ├── Header/
 │   │   │   ├── Header.tsx            # sticky top bar; renders DailyTotals
 │   │   │   └── DailyTotals.tsx       # calories + protein/carbs/fat, pure/presentational
+│   │   ├── DateNav/
+│   │   │   └── DateNav.tsx           # ‹ Today › control; disables "next" at today, shows a Today jump link otherwise
 │   │   └── DailyLog/
-│   │       ├── DailyLog.tsx          # section heading + LogEntryList
+│   │       ├── DailyLog.tsx          # static "Log" heading + LogEntryList (date-agnostic; DateNav carries date context)
 │   │       ├── LogEntryList.tsx      # sorts entries newest-first, renders empty state
 │   │       └── LogEntryRow.tsx       # one entry; delete needs an inline confirm/cancel
 │   ├── data/
 │   │   └── foods.ts                  # static list of 24 common foods
 │   ├── hooks/
-│   │   └── useFoodLog.ts             # today's entries + addEntry/removeEntry, backed by storage.ts
+│   │   └── useFoodLog.ts             # useFoodLog(date) -> entries for that date + addEntry/removeEntry, backed by storage.ts
 │   ├── lib/
-│   │   └── storage.ts                # localStorage getEntries/saveEntries
+│   │   └── storage.ts                # localStorage getEntries/saveEntries (all dates; callers filter)
 │   ├── types/
 │   │   └── index.ts                  # Food, LogEntry types
 │   ├── utils/
-│   │   ├── date.ts                   # todayDateString() (local date, not UTC)
+│   │   ├── date.ts                   # todayDateString(), addDays(), isToday(), formatDateLabel() (all local-date, not UTC)
 │   │   ├── totals.ts                 # calculateTotals(entries) -> {calories, protein, carbs, fat}
 │   │   └── format.ts                 # round1() for display-rounding macros
 │   ├── test/
 │   │   └── setup.ts                  # jest-dom matchers + RTL auto-cleanup, loaded by vitest
-│   ├── App.test.tsx                  # integration: search -> add -> log display -> totals -> confirm-delete
+│   ├── App.test.tsx                  # integration: search -> add -> log display -> totals -> confirm-delete -> date navigation
 │   ├── lib/storage.test.ts           # unit
 │   ├── utils/{date,totals,format}.test.ts  # unit
-│   ├── hooks/useFoodLog.test.ts      # unit
+│   ├── hooks/useFoodLog.test.ts      # unit (includes date-rescoping behavior)
 │   ├── components/FoodSearch/*.test.tsx    # component + FoodSearchPanel integration tests
 │   ├── components/Header/*.test.tsx        # component
+│   ├── components/DateNav/DateNav.test.tsx # component (today vs. past-date states, button handlers)
 │   └── components/DailyLog/*.test.tsx      # component (LogEntryRow's confirm flow, LogEntryList's sort/tie-break)
 ├── public/
 │   └── favicon.svg
@@ -116,22 +120,38 @@ interface LogEntry {
 }
 ```
 
-Stored under the `calorie-tracker:log` key in `localStorage` as a `LogEntry[]` (all dates are kept; the app currently only reads/writes today's).
+Stored under the `calorie-tracker:log` key in `localStorage` as a `LogEntry[]`. All dates were always kept in storage (even in Phases 0–3, when only "today" was ever read) — Phase 4's multi-day history is purely a UI change (`App.tsx` now filters by a `selectedDate` state instead of hardcoding today), with **no storage migration needed**.
+
+## Design System
+
+Phase 4 replaced the initial generic Tailwind slate/emerald look with a deliberate "nutrition facts label" identity: bold black rules, tabular numerals, sharp-cornered bordered cards instead of rounded-shadow SaaS cards. Defined as Tailwind v4 `@theme` tokens in `src/index.css`:
+
+- **Colors** (used as Tailwind utilities, e.g. `bg-ink`, `text-ink-muted`): `paper` #fbf8f3 (background), `ink` #1b1712 (text/rules), `ink-muted` #75695c (secondary text), `line` #e4ddd1 (hairline borders). Each macro has one fixed accent used only as a small dot/marker, never a large fill: `calorie` #c08a1e (gold), `protein` #9a3324 (brick red), `carb` #a67c3d (wheat), `fat` #5c6b3f (olive). The same four colors are reused everywhere a macro appears (Header, FoodCard, anywhere else one might be added) so they function as a consistent legend.
+- **Type**: one family, **Archivo** (loaded via Google Fonts in `index.html`), varied by weight — `font-black` (900) for big numbers (calorie totals), regular/medium weights for body and UI text. `font-variant-numeric: tabular-nums` is set globally on `body` so numbers align.
+- **Layout**: sharp corners (no `rounded-lg`/shadow "card kit" look), borders do the organizing work instead. `Header` is `position: sticky` with a 3px `border-ink` bottom rule; `DateNav` is a slim non-sticky strip directly below it; `DailyLog` renders as bordered ledger rows, not a boxed list.
+
+**If extending the UI**, reuse these tokens rather than reaching for Tailwind's default palette (`slate-*`, `emerald-*`, etc.) or adding `rounded-lg`/`shadow-sm` card styling — that would reintroduce the generic look this phase deliberately moved away from.
 
 ## Build Status
 
-Phases 0–3 are implemented (see `docs/PLAN.md` for full phase definitions):
+Phases 0–4 are implemented (see `docs/PLAN.md` for full phase definitions):
 
 - ✅ **Phase 0** — Vite + React + TypeScript + Tailwind CSS v4 scaffolding
 - ✅ **Phase 1** — static food list + live search + quick-add cards
 - ✅ **Phase 2** — `localStorage`-backed log persistence, quantity stepper wired to `addEntry`
 - ✅ **Phase 3** — sticky `Header` with running calorie/macro totals, `DailyLog` listing today's entries newest-first with a confirm-before-delete action
-- ⬜ **Phase 4** — optional polish / stretch goals (see `docs/PLAN.md`)
+- ✅ **Phase 4** — visual design refresh (see Design System above), a mobile/responsive pass, and multi-day history (`DateNav` + `useFoodLog(date)`)
 
 Notable Phase 3 decisions (confirmed with the user before building):
 - Log entries display **newest-added first**. `LogEntryList` reverses the array before a stable sort by `loggedAt` so that two entries added in the same millisecond still resolve to newest-first (a real tie-breaking bug caught by the test suite while building this — see `LogEntryList.test.tsx`).
 - Deleting a logged entry requires an inline **confirm/cancel** step (`LogEntryRow`'s own local state) rather than deleting immediately or using `window.confirm` (which the app avoids as a legacy/blocking pattern).
 - `Header` is `position: sticky` and renders `DailyTotals`; there's no separate/duplicate totals display elsewhere on the page.
+
+Notable Phase 4 decisions (confirmed with the user before building):
+- Scope was narrowed from the plan's full "polish + stretch goals" list down to: a visual design refresh, a responsive/mobile pass, and just the **multi-day history** stretch goal (not custom foods or in-place quantity editing, which remain deferred).
+- Viewing a previous day via `DateNav` is **not read-only** — the "Add Food" section still adds to whichever date is currently selected (`useFoodLog(selectedDate)`), so a forgotten meal from yesterday can be logged retroactively. The subtext under "Add Food" reflects this ("...log it for today" vs. "...for this day").
+- Navigating into the future is prevented: `DateNav`'s next-day button is disabled while `selectedDate` is today.
+- `useFoodLog` takes the target `date` as an argument rather than always reading `todayDateString()` internally; `App.tsx` holds a single `selectedDate` state and re-renders the same hook instance with a new date on navigation (entries re-filter; nothing is lost or remounted).
 
 ## Coding Guidelines
 

@@ -1,5 +1,19 @@
 @import 'tailwindcss';
 
+@theme {
+  --color-paper: #fbf8f3;
+  --color-ink: #1b1712;
+  --color-ink-muted: #75695c;
+  --color-line: #e4ddd1;
+  --color-calorie: #c08a1e;
+  --color-protein: #9a3324;
+  --color-carb: #a67c3d;
+  --color-fat: #5c6b3f;
+
+  --font-sans: 'Archivo', ui-sans-serif, system-ui, sans-serif;
+}
+
 body {
-  @apply bg-slate-50 text-slate-900;
+  @apply bg-paper text-ink;
+  font-variant-numeric: tabular-nums;
 }

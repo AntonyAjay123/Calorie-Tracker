@@ -11,7 +11,7 @@ export function SearchBar({ value, onChange }: SearchBarProps) {
       onChange={(e) => onChange(e.target.value)}
       placeholder="Search foods (e.g. chicken, rice, banana)…"
       aria-label="Search foods"
-      className="w-full rounded-lg border border-slate-300 bg-white px-4 py-2.5 text-slate-900 placeholder:text-slate-400 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+      className="w-full border-2 border-ink bg-paper px-4 py-2.5 text-ink placeholder:text-ink-muted focus:outline-none focus:ring-2 focus:ring-calorie/50"
     />
   );
 }

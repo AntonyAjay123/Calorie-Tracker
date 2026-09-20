@@ -4,7 +4,7 @@
 
 A simple, no-login, single-page calorie tracker. Users search or quick-pick from a built-in list of 20+ common foods, add them to a daily log, and see a running calorie/macro total. Everything persists locally across page refreshes — no backend, no accounts.
 
-**Status: Phases 0–3 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2)). Phase 4 is not yet built — see the [Phases](#phases) section below for per-phase status.
+**Status: Phases 0–4 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in PR #3). See the [Phases](#phases) section below for per-phase status and how Phase 4's actual scope was narrowed down from the options listed there.
 
 ## Tech Stack
 
@@ -162,11 +162,18 @@ The gap noted above (no visible log/feedback when adding) is resolved by Phase 3
 
 **Verified:** `npm run build`, `npm run lint`, and `npm test` (48 tests) all pass; manually tested in a real browser — totals update correctly on add/remove, entries sort newest-first, delete requires confirm, and everything survives a page refresh. Writing the tests surfaced and fixed a real bug: two entries sharing an identical `loggedAt` (e.g. added in the same millisecond) weren't guaranteed to sort newest-first — `LogEntryList` now reverses before its stable sort to fix this.
 
-### Phase 4 — Polish & Stretch (optional, discuss before building) ⬜ Not started
+### Phase 4 — Polish & Stretch ✅ Complete
 
-- Quantity editor refinement (numeric input/stepper) if not already solid from Phase 2.
-- Empty states (no foods match search; log empty for today) and a responsive layout pass.
-- Possible future extensions **not otherwise in scope**: viewing/navigating previous days' logs, adding custom (non-list) foods, editing an already-logged entry's quantity, setting a daily calorie goal.
+Scope was narrowed down with the user before building (see decisions below) to: a responsive/mobile layout pass, a deliberate visual design refresh, and one stretch goal (multi-day history). Custom food entry and in-place quantity editing remain deferred/out of scope.
 
-**Assumptions:**
-- This phase is intentionally deferred/optional — only pursued if the user wants to extend past the MVP described in Phases 1–3.
+- Quantity editor refinement (numeric input/stepper) if not already solid from Phase 2. — *Already solid from Phase 2 (−/+ stepper in 0.5 increments, min 0.5); no changes needed.*
+- Empty states (no foods match search; log empty for today) and a responsive layout pass. — *Empty states already existed from Phases 1/3. Responsive pass: verified at mobile width (~390px) — Header's macro row wraps via `flex-wrap`, FoodGrid was already single-column below the `sm:` breakpoint, DateNav and DailyLog rows fit without overflow.*
+- Multi-day history — **done**: `DateNav` (‹ Today ›) lets the user page through previous days; `useFoodLog` now takes the target date as an argument instead of hardcoding `todayDateString()`. All dates were already retained in `localStorage` since Phase 2, so this needed no storage migration.
+- Custom (non-list) foods, editing an already-logged entry's quantity, and a daily calorie goal — still **not in scope**, per the narrowed-down decision below.
+
+**Decisions confirmed with the user before building:**
+- Primary focus: "polish + a real visual design refresh" over "responsive/functional polish only" — the app had been using generic Tailwind slate/emerald defaults; Phase 4 replaced this with a deliberate "nutrition facts label" identity (bold black rules, tabular numerals, one accent color per macro used consistently as small markers, sharp-cornered bordered cards instead of rounded-shadow cards). Full token system documented in `CLAUDE.md` → Design System.
+- Of the stretch goals offered (multi-day history, custom food entry, in-place quantity editing), only **multi-day history** was selected.
+- Viewing a past day is not read-only: "Add Food" logs to whichever date is currently selected, not always today, so a forgotten meal can be logged retroactively. Navigating into the future is blocked (next-day button disabled while on today).
+
+**Verified:** `npm run build`, `npm run lint`, and `npm test` (66 tests) all pass; manually tested in a real browser at both desktop and mobile (~390px, via an iframe since the browser tool's window resize wasn't taking effect) widths — date navigation, retroactive logging on a past day, totals resetting per selected date, and the visual redesign all confirmed working.

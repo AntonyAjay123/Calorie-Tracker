@@ -20,12 +20,12 @@ const entry: LogEntry = {
 describe('DailyLog', () => {
   it('renders the section heading and the entry list', () => {
     render(<DailyLog entries={[entry]} onRemove={() => {}} />);
-    expect(screen.getByRole('heading', { name: "Today's Log" })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Log' })).toBeInTheDocument();
     expect(screen.getByText('Egg')).toBeInTheDocument();
   });
 
   it('shows the empty state when there are no entries', () => {
     render(<DailyLog entries={[]} onRemove={() => {}} />);
-    expect(screen.getByText(/nothing logged yet today/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing logged here yet/i)).toBeInTheDocument();
   });
 });

@@ -55,7 +55,7 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
     render(<App />);
 
     expect(screen.getByText('0')).toBeInTheDocument();
-    expect(screen.getByText(/nothing logged yet today/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing logged here yet/i)).toBeInTheDocument();
 
     await user.type(screen.getByRole('textbox', { name: /search foods/i }), 'Chicken Breast');
     const card = screen.getByText('Chicken Breast').closest('div')!.parentElement!;
@@ -65,7 +65,7 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
     // Header total: 165 kcal * 1.5 = 247.5 -> rounded to 248
     expect(screen.getByText('248')).toBeInTheDocument();
 
-    const log = screen.getByRole('heading', { name: "Today's Log" }).closest('section')!;
+    const log = screen.getByRole('heading', { name: 'Log' }).closest('section')!;
     expect(within(log).getByText('Chicken Breast')).toBeInTheDocument();
     expect(within(log).getByText('×1.5')).toBeInTheDocument();
   });
@@ -81,7 +81,7 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
     await user.type(screen.getByRole('textbox', { name: /search foods/i }), 'Banana');
     await user.click(screen.getByRole('button', { name: /^add$/i }));
 
-    const log = screen.getByRole('heading', { name: "Today's Log" }).closest('section')!;
+    const log = screen.getByRole('heading', { name: 'Log' }).closest('section')!;
     const rows = within(log).getAllByRole('listitem');
     expect(rows).toHaveLength(2);
     expect(rows[0]).toHaveTextContent('Banana'); // added second -> newest first
@@ -95,5 +95,48 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
     expect(remainingRows).toHaveLength(1);
     expect(remainingRows[0]).toHaveTextContent('Egg');
     expect(screen.getByText('78')).toBeInTheDocument(); // just Egg's calories remain
+  });
+
+  it('navigating to a previous day shows that day empty, with the next-day button disabled while on today', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const header = screen.getByRole('banner');
+
+    // Log something today first.
+    await user.type(screen.getByRole('textbox', { name: /search foods/i }), 'Egg');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+    expect(within(header).getByText('78')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /next day/i })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: /previous day/i }));
+
+    expect(screen.getByText('Yesterday')).toBeInTheDocument();
+    expect(within(header).getByText('0')).toBeInTheDocument(); // yesterday's total, not today's
+    expect(screen.getByText(/nothing logged here yet/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /next day/i })).not.toBeDisabled();
+  });
+
+  it('adding a food while viewing a previous day logs it under that date, not today, and returning to today leaves it unaffected', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    const header = screen.getByRole('banner');
+
+    await user.click(screen.getByRole('button', { name: /previous day/i })); // now on 2026-03-04
+
+    await user.type(screen.getByRole('textbox', { name: /search foods/i }), 'Banana');
+    await user.click(screen.getByRole('button', { name: /^add$/i }));
+
+    expect(screen.getByText('Banana', { selector: 'p' })).toBeInTheDocument(); // in the log, not just the FoodCard
+    expect(within(header).getByText('105')).toBeInTheDocument(); // yesterday's total
+
+    const stored = JSON.parse(localStorage.getItem('calorie-tracker:log') ?? '[]');
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ foodName: 'Banana', date: '2026-03-04' });
+
+    await user.click(screen.getByRole('button', { name: /^today$/i }));
+
+    expect(within(header).getByText('0')).toBeInTheDocument(); // today has nothing logged
+    expect(screen.getByText(/nothing logged here yet/i)).toBeInTheDocument();
+    expect(screen.queryByText('Banana', { selector: 'p' })).not.toBeInTheDocument();
   });
 });

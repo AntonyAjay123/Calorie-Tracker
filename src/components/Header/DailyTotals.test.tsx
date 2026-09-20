@@ -6,7 +6,7 @@ describe('DailyTotals', () => {
   it('renders zeros when totals are empty', () => {
     render(<DailyTotals totals={{ calories: 0, protein: 0, carbs: 0, fat: 0 }} />);
     expect(screen.getByText('0')).toBeInTheDocument();
-    expect(screen.getByText('kcal today')).toBeInTheDocument();
+    expect(screen.getByText('kcal')).toBeInTheDocument();
   });
 
   it('rounds calories to the nearest whole number and macros to one decimal', () => {

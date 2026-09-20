@@ -8,7 +8,7 @@ interface FoodGridProps {
 
 export function FoodGrid({ foods, onAdd }: FoodGridProps) {
   if (foods.length === 0) {
-    return <p className="mt-6 text-center text-slate-500">No foods match your search.</p>;
+    return <p className="mt-6 text-center text-ink-muted">No foods match your search.</p>;
   }
 
   return (

@@ -1,28 +1,40 @@
+import { useState } from 'react';
 import { DailyLog } from './components/DailyLog/DailyLog';
+import { DateNav } from './components/DateNav/DateNav';
 import { FoodSearchPanel } from './components/FoodSearch/FoodSearchPanel';
 import { Header } from './components/Header/Header';
 import { useFoodLog } from './hooks/useFoodLog';
+import { addDays, isToday, todayDateString } from './utils/date';
 import { calculateTotals } from './utils/totals';
 
 function App() {
-  const { todayEntries, addEntry, removeEntry } = useFoodLog();
-  const totals = calculateTotals(todayEntries);
+  const [selectedDate, setSelectedDate] = useState(todayDateString());
+  const { entries, addEntry, removeEntry } = useFoodLog(selectedDate);
+  const totals = calculateTotals(entries);
 
   return (
     <div className="min-h-screen">
       <Header totals={totals} />
+      <DateNav
+        selectedDate={selectedDate}
+        onPrevDay={() => setSelectedDate((date) => addDays(date, -1))}
+        onNextDay={() => setSelectedDate((date) => addDays(date, 1))}
+        onToday={() => setSelectedDate(todayDateString())}
+      />
 
       <main className="mx-auto max-w-5xl px-4 py-8">
         <section>
-          <h2 className="text-lg font-semibold text-slate-900">Add Food</h2>
-          <p className="mt-1 text-slate-500">Search or quick-add a food to log it for today.</p>
+          <h2 className="text-lg font-semibold text-ink">Add Food</h2>
+          <p className="mt-1 text-ink-muted">
+            Search or quick-add a food to log it for {isToday(selectedDate) ? 'today' : 'this day'}.
+          </p>
           <div className="mt-3">
             <FoodSearchPanel onAdd={addEntry} />
           </div>
         </section>
 
         <div className="mt-10">
-          <DailyLog entries={todayEntries} onRemove={removeEntry} />
+          <DailyLog entries={entries} onRemove={removeEntry} />
         </div>
       </main>
     </div>
