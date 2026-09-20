@@ -4,7 +4,7 @@
 
 A simple, no-login, single-page calorie tracker. Users search or quick-pick from a built-in list of 20+ common foods, add them to a daily log, and see a running calorie/macro total. As shipped in Phases 0-4, everything persists locally across page refreshes via `localStorage` — no accounts, no backend, no database. **Phase 6 changes this**: a small FastAPI + SQLite backend takes over as the source of truth for the daily log, and the app requires that backend running from then on — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
 
-**Status: Phases 0–5 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3), Phase 5 in [PR #4](https://github.com/AntonyAjay123/Calorie-Tracker/pull/4)). Phases 6–10 (a SQLite-backed daily log, photo upload + AI calorie analysis, plus food icons) are planned but not yet built — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
+**Status: Phases 0–7 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3), Phase 5 in [PR #4](https://github.com/AntonyAjay123/Calorie-Tracker/pull/4), Phases 6–7 together in a later PR). Phases 8–10 (photo upload frontend, food icons, polish) are planned but not yet built — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
 
 ## Tech Stack
 
@@ -17,8 +17,8 @@ A simple, no-login, single-page calorie tracker. Users search or quick-pick from
 **Backend (Phase 5+):**
 - **Python 3.12+**, managed by **uv** (no pip/poetry)
 - **FastAPI** + **Pydantic v2** (fully typed request/response schemas and config)
-- **SQLite** + **SQLModel** (Phase 6+) — persists the daily log, replacing `localStorage`
-- **Anthropic Python SDK** (Phase 7+) — vision-capable Claude model call
+- **SQLite** + **SQLModel** — persists the daily log, replacing `localStorage` (Phase 6 ✅)
+- **Anthropic Python SDK** — vision-capable Claude model call for the (not-yet-frontend-wired) photo analysis endpoint (Phase 7 ✅)
 
 **Containerization (optional, not a numbered phase) ✅ Complete:**
 - **Docker** + **Docker Compose** — `docker compose up --build` runs both services (dev-oriented: hot reload via bind mounts, not a production build). See `CLAUDE.md` → How to Run for the commands and the gotchas hit while setting it up (Docker-network hostnames vs. `localhost`, the file-watcher-over-bind-mount issue).
@@ -215,7 +215,7 @@ Adds the app's first real backend: a FastAPI service (managed with `uv`, fully t
 
 **Verified:** `uv run pytest` (5 tests: `Settings` fail-fast/defaults/override, `/api/health`) passes; `uv run fastapi dev app/main.py --port 8001` boots cleanly and `curl http://127.0.0.1:8001/api/health` returns `{"status":"ok"}`; with the frontend dev server also running, `curl http://localhost:5173/api/health` returns the same response, confirming the Vite proxy reaches the backend end-to-end. Frontend `npm run build`/`lint`/`test` (66 tests) still pass unaffected by the `vite.config.ts` change.
 
-### Phase 6 — Daily Log Database (SQLite) ⬜ Not started
+### Phase 6 — Daily Log Database (SQLite) ✅ Complete
 
 - Add `sqlmodel` to `backend/pyproject.toml` (Pydantic + SQLAlchemy combined — one model class serves as both the DB table and the API schema; chosen over raw SQLAlchemy for less boilerplate and over plain `sqlite3` for actual type safety).
 - `backend/app/models.py`: a `LogEntry` SQLModel table (id, foodId, foodName, quantity, calories, protein, carbs, fat, servingSize, date, loggedAt, source). `backend/app/db.py`: engine + session setup; tables created on startup (`SQLModel.metadata.create_all`) — no Alembic/migrations for this MVP.
@@ -228,17 +228,22 @@ Adds the app's first real backend: a FastAPI service (managed with `uv`, fully t
 - Only the daily log moves to SQLite — the 24-item food catalog (`src/data/foods.ts`) stays a static frontend file; it doesn't change, so there's no reason to add DB complexity there.
 - `GET /api/log` is scoped by a single `date` query param, matching how the frontend already only ever needs one date's entries at a time.
 
-**Verified (once built):** backend `pytest` CRUD tests against a temp/in-memory SQLite DB (`GET`/`POST`/`DELETE /api/log`); `storage.test.ts`, `useFoodLog.test.ts`, and `App.test.tsx` (≈20 of the app's 66 existing tests, which all mocked/used `localStorage` directly) rewritten to mock `fetch` instead.
+**Deviation from the plan — the frontend/backend field-name boundary:** rather than aliasing the backend's Pydantic models to emit camelCase JSON, the backend uses idiomatic Python `snake_case` field names throughout (`food_id`, `logged_at`, etc.), and `src/lib/storage.ts` (the API client) translates to/from the frontend's camelCase `LogEntry` type at the wire boundary. This keeps both sides idiomatic to their own language without alias-generator machinery, and centralizes the translation in exactly the file whose job is talking to the backend.
 
-### Phase 7 — Photo Analysis Endpoint (Anthropic Vision Integration) ⬜ Not started
+**Verified:** backend `pytest` (22 tests total, up from 5) — CRUD tests for `GET`/`POST`/`DELETE /api/log` against a fresh in-memory SQLite DB per test (via `app.dependency_overrides` + a `StaticPool`-backed engine, not the real `backend/data/` file). Frontend: `storage.test.ts` rewritten to mock `fetch` and assert the snake_case-to-camelCase translation; `useFoodLog.test.ts` rewritten to mock `lib/storage` and assert loading/error state transitions plus `waitFor`-based async flows; `App.test.tsx` rewritten around a small in-memory fake backend (a stubbed `fetch` implementing `/api/log`'s three endpoints) so the search-add-display-totals-delete-navigate flow is still exercised end-to-end, plus a new case for the backend-unreachable error state. 72 frontend tests total (up from 66). `npm run build` and `npm run lint` both pass (lint has one pre-existing-pattern `set-state-in-effect` warning in `useFoodLog.ts`'s data-fetching effect — a warning, not an error, same category already accepted as fine back in Phase 2).
 
-- `backend/app/schemas.py`: `FoodAnalysisResult` (name, calories, protein, carbs, fat, servingSize, disclaimer) + a typed error response.
-- `backend/app/vision.py`: one Anthropic Messages API call with the base64-encoded image and a strict-JSON prompt; validates/parses the response into `FoodAnalysisResult`, raising a typed exception on any failure (bad JSON, missing fields, refusal, upstream error).
-- `POST /api/analyze-food-image`: validates content-type (`image/jpeg`/`png`/`webp`) and size (e.g. 8MB max) server-side, calls `vision.py`, returns the result or a typed error. Image is never written to disk — this endpoint stays stateless even though Phase 6 added a database for the log.
+### Phase 7 — Photo Analysis Endpoint (Anthropic Vision Integration) ✅ Complete
+
+- `backend/app/schemas.py`: `FoodAnalysisResult` (name, calories, protein, carbs, fat, serving_size, disclaimer).
+- `backend/app/vision.py`: one Anthropic Messages API call (`client.messages.create`, image passed as a base64 content block) with a strict-JSON system prompt; `_parse_result` validates/parses the response text into `FoodAnalysisResult`, raising `VisionAnalysisError` on any failure (bad JSON, missing fields, refusal, upstream error).
+- `POST /api/analyze-food-image`: validates content-type (`image/jpeg`/`png`/`webp`) and size (8MB max) server-side, calls `vision.py`, returns the result (200) or a typed error (415 unsupported type, 413 too large, 502 on a `VisionAnalysisError`). Image is never written to disk or the database — this endpoint stays stateless even though Phase 6 added a database for the log.
 
 **Assumptions:**
 - One item per photo, per the confirmed decision above.
 - No caching/deduplication of repeated uploads — acceptable for a single-user local app.
+- No typed error *response body* beyond FastAPI's default `{"detail": "..."}` shape for `HTTPException` — simpler than a bespoke error schema, and the frontend (Phase 8) only needs the status code plus a message to show.
+
+**Verified:** backend `pytest` — `test_vision.py` covers `_parse_result` directly (valid JSON, malformed JSON, missing fields) and `analyze_food_image` against a fake Anthropic client (`monkeypatch.setattr("app.vision.Anthropic", ...)`, so no real network/API-key use in tests); `test_analyze.py` covers the endpoint's content-type/size validation and both the success and `VisionAnalysisError`-to-502 paths by monkeypatching `app.routers.analyze.analyze_food_image`. No frontend changes yet — Phase 8 is what calls this endpoint from the UI.
 
 ### Phase 8 — Photo Upload Frontend ⬜ Not started
 

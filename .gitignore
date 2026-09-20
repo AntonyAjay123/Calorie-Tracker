@@ -22,6 +22,9 @@ env/
 .pytest_cache/
 .ruff_cache/
 
+# Backend SQLite database (real user data, not source)
+backend/data/
+
 # Build output
 dist/
 build/

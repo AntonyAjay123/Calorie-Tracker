@@ -1,7 +1,15 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Food } from '../types';
+import type { Food, LogEntry } from '../types';
 import { useFoodLog } from './useFoodLog';
+
+const { getEntries, addEntry: apiAddEntry, removeEntry: apiRemoveEntry } = vi.hoisted(() => ({
+  getEntries: vi.fn(),
+  addEntry: vi.fn(),
+  removeEntry: vi.fn(),
+}));
+
+vi.mock('../lib/storage', () => ({ getEntries, addEntry: apiAddEntry, removeEntry: apiRemoveEntry }));
 
 const chicken: Food = {
   id: 'chicken-breast',
@@ -16,132 +24,138 @@ const chicken: Food = {
 const TODAY = '2026-03-05';
 const YESTERDAY = '2026-03-04';
 
+function entryFor(date: string, overrides: Partial<LogEntry> = {}): LogEntry {
+  return {
+    id: 'existing',
+    foodId: 'egg',
+    foodName: 'Egg',
+    quantity: 1,
+    calories: 78,
+    protein: 6.3,
+    carbs: 0.6,
+    fat: 5.3,
+    servingSize: '1 large',
+    date,
+    loggedAt: '2026-03-05T08:00:00.000Z',
+    ...overrides,
+  };
+}
+
 describe('useFoodLog', () => {
   beforeEach(() => {
-    localStorage.clear();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 2, 5, 12, 0, 0));
+    getEntries.mockReset().mockResolvedValue([]);
+    apiAddEntry.mockReset();
+    apiRemoveEntry.mockReset().mockResolvedValue(undefined);
   });
 
   afterEach(() => {
     vi.useRealTimers();
   });
 
-  it('starts with no entries when storage is empty', () => {
+  it('starts loading, then resolves to no entries when the backend has nothing for the date', async () => {
     const { result } = renderHook(() => useFoodLog(TODAY));
+    expect(result.current.isLoading).toBe(true);
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
     expect(result.current.entries).toEqual([]);
+    expect(getEntries).toHaveBeenCalledWith(TODAY);
   });
 
-  it('loads pre-existing entries for the given date from storage', () => {
-    localStorage.setItem(
-      'calorie-tracker:log',
-      JSON.stringify([
-        {
-          id: 'existing',
-          foodId: 'egg',
-          foodName: 'Egg',
-          quantity: 1,
-          calories: 78,
-          protein: 6.3,
-          carbs: 0.6,
-          fat: 5.3,
-          servingSize: '1 large',
-          date: TODAY,
-          loggedAt: '2026-03-05T08:00:00.000Z',
-        },
-      ]),
-    );
+  it('loads pre-existing entries for the given date from the backend', async () => {
+    getEntries.mockResolvedValue([entryFor(TODAY)]);
 
     const { result } = renderHook(() => useFoodLog(TODAY));
-    expect(result.current.entries).toHaveLength(1);
+
+    await waitFor(() => expect(result.current.entries).toHaveLength(1));
     expect(result.current.entries[0].foodName).toBe('Egg');
   });
 
-  it('excludes entries from other dates', () => {
-    localStorage.setItem(
-      'calorie-tracker:log',
-      JSON.stringify([
-        {
-          id: 'yesterday',
-          foodId: 'egg',
-          foodName: 'Egg',
-          quantity: 1,
-          calories: 78,
-          protein: 6.3,
-          carbs: 0.6,
-          fat: 5.3,
-          servingSize: '1 large',
-          date: YESTERDAY,
-          loggedAt: '2026-03-04T08:00:00.000Z',
-        },
-      ]),
+  it('sets an error and stops loading when fetching entries fails', async () => {
+    getEntries.mockRejectedValue(new Error('network down'));
+
+    const { result } = renderHook(() => useFoodLog(TODAY));
+
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.error).toMatch(/couldn't reach the server/i);
+  });
+
+  it('addEntry scales macros by quantity, stamps the given date, and appends the server-returned entry', async () => {
+    apiAddEntry.mockImplementation(async (entry) => ({
+      ...entry,
+      id: 'new-id',
+      loggedAt: '2026-03-05T12:00:00.000Z',
+    }));
+
+    const { result } = renderHook(() => useFoodLog(TODAY));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+
+    await act(async () => {
+      await result.current.addEntry(chicken, 2);
+    });
+
+    expect(apiAddEntry).toHaveBeenCalledWith(
+      expect.objectContaining({ calories: 330, protein: 62, date: TODAY, foodName: 'Chicken Breast' }),
     );
-
-    const { result } = renderHook(() => useFoodLog(TODAY));
-    expect(result.current.entries).toEqual([]);
-  });
-
-  it('addEntry scales macros by quantity, stamps the given date, and persists to storage', () => {
-    const { result } = renderHook(() => useFoodLog(TODAY));
-
-    act(() => {
-      result.current.addEntry(chicken, 2);
-    });
-
     expect(result.current.entries).toHaveLength(1);
-    const entry = result.current.entries[0];
-    expect(entry.calories).toBe(330);
-    expect(entry.protein).toBe(62);
-    expect(entry.date).toBe(TODAY);
-    expect(entry.foodName).toBe('Chicken Breast');
-
-    const persisted = JSON.parse(localStorage.getItem('calorie-tracker:log') ?? '[]');
-    expect(persisted).toHaveLength(1);
-    expect(persisted[0].calories).toBe(330);
+    expect(result.current.entries[0].id).toBe('new-id');
   });
 
-  it('addEntry stamps entries with whatever date the hook was called with, not always today', () => {
+  it('addEntry stamps entries with whatever date the hook was called with, not always today', async () => {
+    apiAddEntry.mockImplementation(async (entry) => ({ ...entry, id: 'new-id', loggedAt: 'now' }));
+
     const { result } = renderHook(() => useFoodLog(YESTERDAY));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    act(() => {
-      result.current.addEntry(chicken, 1);
+    await act(async () => {
+      await result.current.addEntry(chicken, 1);
     });
 
-    expect(result.current.entries).toHaveLength(1);
-    expect(result.current.entries[0].date).toBe(YESTERDAY);
+    expect(apiAddEntry).toHaveBeenCalledWith(expect.objectContaining({ date: YESTERDAY }));
   });
 
-  it('removeEntry deletes the entry from state and storage', () => {
+  it('sets an error and leaves entries unchanged when addEntry fails', async () => {
+    apiAddEntry.mockRejectedValue(new Error('server down'));
+
     const { result } = renderHook(() => useFoodLog(TODAY));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
 
-    act(() => {
-      result.current.addEntry(chicken, 1);
-    });
-    const addedId = result.current.entries[0].id;
-
-    act(() => {
-      result.current.removeEntry(addedId);
+    await act(async () => {
+      await result.current.addEntry(chicken, 1);
     });
 
     expect(result.current.entries).toEqual([]);
-    expect(JSON.parse(localStorage.getItem('calorie-tracker:log') ?? '[]')).toEqual([]);
+    expect(result.current.error).toMatch(/couldn't reach the server/i);
   });
 
-  it('re-scopes entries when the date argument changes, without losing entries already added (mirrors DateNav navigation)', () => {
+  it('removeEntry deletes the entry from state after the backend confirms', async () => {
+    getEntries.mockResolvedValue([entryFor(TODAY, { id: 'to-remove' })]);
+
+    const { result } = renderHook(() => useFoodLog(TODAY));
+    await waitFor(() => expect(result.current.entries).toHaveLength(1));
+
+    await act(async () => {
+      await result.current.removeEntry('to-remove');
+    });
+
+    expect(apiRemoveEntry).toHaveBeenCalledWith('to-remove');
+    expect(result.current.entries).toEqual([]);
+  });
+
+  it('re-fetches entries when the date argument changes (mirrors DateNav navigation)', async () => {
+    getEntries.mockImplementation(async (date: string) => (date === TODAY ? [entryFor(TODAY)] : []));
+
     const { result, rerender } = renderHook(({ date }) => useFoodLog(date), {
       initialProps: { date: TODAY },
     });
-
-    act(() => {
-      result.current.addEntry(chicken, 1);
-    });
-    expect(result.current.entries).toHaveLength(1);
+    await waitFor(() => expect(result.current.entries).toHaveLength(1));
 
     rerender({ date: YESTERDAY });
-    expect(result.current.entries).toEqual([]);
+    await waitFor(() => expect(result.current.entries).toEqual([]));
 
     rerender({ date: TODAY });
-    expect(result.current.entries).toHaveLength(1);
-    expect(result.current.entries[0].foodName).toBe('Chicken Breast');
+    await waitFor(() => expect(result.current.entries).toHaveLength(1));
+    expect(getEntries).toHaveBeenCalledWith(YESTERDAY);
   });
 });

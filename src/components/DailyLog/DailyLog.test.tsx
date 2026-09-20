@@ -28,4 +28,16 @@ describe('DailyLog', () => {
     render(<DailyLog entries={[]} onRemove={() => {}} />);
     expect(screen.getByText(/nothing logged here yet/i)).toBeInTheDocument();
   });
+
+  it('shows a loading message instead of entries while isLoading is true', () => {
+    render(<DailyLog entries={[entry]} onRemove={() => {}} isLoading />);
+    expect(screen.getByText(/loading/i)).toBeInTheDocument();
+    expect(screen.queryByText('Egg')).not.toBeInTheDocument();
+  });
+
+  it('shows the error message instead of entries when error is set', () => {
+    render(<DailyLog entries={[entry]} onRemove={() => {}} error="Couldn't reach the server." />);
+    expect(screen.getByText("Couldn't reach the server.")).toBeInTheDocument();
+    expect(screen.queryByText('Egg')).not.toBeInTheDocument();
+  });
 });

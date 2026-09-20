@@ -1,22 +1,70 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from './App';
 
-describe('App (integration: search -> add -> persistence across remounts)', () => {
+// A minimal in-memory stand-in for the Phase 6 backend's /api/log endpoints, since App now
+// talks to the backend via fetch instead of reading/writing localStorage directly. Keeping this
+// here (rather than mocking `lib/storage` directly) preserves this suite's value as a true
+// integration test — it still exercises the snake_case<->camelCase translation in storage.ts.
+function stubBackend() {
+  const entries: Array<Record<string, unknown>> = [];
+  let nextId = 1;
+
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = typeof input === 'string' ? input : input.toString();
+    const method = init?.method ?? 'GET';
+
+    if (method === 'GET' && url.startsWith('/api/log?date=')) {
+      const date = decodeURIComponent(url.slice('/api/log?date='.length));
+      return jsonResponse(entries.filter((entry) => entry.date === date));
+    }
+
+    if (method === 'POST' && url === '/api/log') {
+      const body = JSON.parse(init!.body as string);
+      const created = { ...body, id: String(nextId++), logged_at: new Date().toISOString() };
+      entries.push(created);
+      return jsonResponse(created, 201);
+    }
+
+    const deleteMatch = /^\/api\/log\/(.+)$/.exec(url);
+    if (method === 'DELETE' && deleteMatch) {
+      const id = decodeURIComponent(deleteMatch[1]);
+      const index = entries.findIndex((entry) => entry.id === id);
+      if (index !== -1) entries.splice(index, 1);
+      return { ok: true, status: 204, url, json: () => Promise.resolve(null) } as Response;
+    }
+
+    throw new Error(`Unhandled request in stubBackend: ${method} ${url}`);
+  });
+
+  vi.stubGlobal('fetch', fetchMock);
+}
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return { ok: true, status, url: '/api/log', json: () => Promise.resolve(body) } as Response;
+}
+
+async function waitForLogToFinishLoading() {
+  await waitFor(() => expect(screen.queryByText(/^loading/i)).not.toBeInTheDocument());
+}
+
+describe('App (integration: search -> add -> log display -> totals -> delete -> date navigation)', () => {
   beforeEach(() => {
-    localStorage.clear();
+    stubBackend();
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(new Date(2026, 2, 5, 12, 0, 0));
   });
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
   });
 
-  it('searching for and adding a food persists a correctly-scaled entry to localStorage', async () => {
+  it('searching for and adding a food logs a correctly-scaled entry via the backend', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await waitForLogToFinishLoading();
 
     await user.type(screen.getByRole('textbox', { name: /search foods/i }), 'Chicken Breast');
 
@@ -24,35 +72,36 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
     await user.click(within(card).getByRole('button', { name: /increase quantity/i }));
     await user.click(within(card).getByRole('button', { name: /^add$/i }));
 
-    const stored = JSON.parse(localStorage.getItem('calorie-tracker:log') ?? '[]');
-    expect(stored).toHaveLength(1);
-    expect(stored[0]).toMatchObject({
-      foodName: 'Chicken Breast',
-      quantity: 1.5,
-      calories: 247.5,
-      date: '2026-03-05',
-    });
+    const log = screen.getByRole('heading', { name: 'Log' }).closest('section')!;
+    await within(log).findByText('Chicken Breast');
+    expect(within(log).getByText('×1.5')).toBeInTheDocument();
+    expect(screen.getByText('248')).toBeInTheDocument(); // 165 * 1.5 = 247.5 -> rounded
   });
 
   it('an entry added before a remount (simulated page refresh) is still loaded afterward', async () => {
     const user = userEvent.setup();
     const { unmount } = render(<App />);
+    await waitForLogToFinishLoading();
 
     await user.type(screen.getByRole('textbox', { name: /search foods/i }), 'Banana');
     await user.click(screen.getByRole('button', { name: /^add$/i }));
 
+    const log = screen.getByRole('heading', { name: 'Log' }).closest('section')!;
+    await within(log).findByText('Banana');
+
     unmount();
 
-    // Re-mounting reads fresh from localStorage, simulating a page reload.
+    // Re-mounting re-fetches from the (same, still-populated) stubbed backend.
     render(<App />);
-    const stored = JSON.parse(localStorage.getItem('calorie-tracker:log') ?? '[]');
-    expect(stored).toHaveLength(1);
-    expect(stored[0].foodName).toBe('Banana');
+    await waitForLogToFinishLoading();
+    const logAfterRemount = screen.getByRole('heading', { name: 'Log' }).closest('section')!;
+    expect(within(logAfterRemount).getByText('Banana')).toBeInTheDocument();
   });
 
   it('adding a food updates the header totals and shows it in the daily log', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await waitForLogToFinishLoading();
 
     expect(screen.getByText('0')).toBeInTheDocument();
     expect(screen.getByText(/nothing logged here yet/i)).toBeInTheDocument();
@@ -63,7 +112,7 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
     await user.click(within(card).getByRole('button', { name: /^add$/i }));
 
     // Header total: 165 kcal * 1.5 = 247.5 -> rounded to 248
-    expect(screen.getByText('248')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText('248')).toBeInTheDocument());
 
     const log = screen.getByRole('heading', { name: 'Log' }).closest('section')!;
     expect(within(log).getByText('Chicken Breast')).toBeInTheDocument();
@@ -73,6 +122,7 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
   it('adding two foods lists the most recently added one first, and removing it (with confirm) restores the total', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await waitForLogToFinishLoading();
 
     await user.type(screen.getByRole('textbox', { name: /search foods/i }), 'Egg');
     await user.click(screen.getByRole('button', { name: /^add$/i }));
@@ -82,8 +132,11 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
     await user.click(screen.getByRole('button', { name: /^add$/i }));
 
     const log = screen.getByRole('heading', { name: 'Log' }).closest('section')!;
-    const rows = within(log).getAllByRole('listitem');
-    expect(rows).toHaveLength(2);
+    const rows = await waitFor(() => {
+      const found = within(log).getAllByRole('listitem');
+      expect(found).toHaveLength(2);
+      return found;
+    });
     expect(rows[0]).toHaveTextContent('Banana'); // added second -> newest first
     expect(rows[1]).toHaveTextContent('Egg');
 
@@ -91,8 +144,8 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
     await user.click(within(rows[0]).getByRole('button', { name: /remove banana/i }));
     await user.click(within(log).getByRole('button', { name: /confirm/i }));
 
+    await waitFor(() => expect(within(log).getAllByRole('listitem')).toHaveLength(1));
     const remainingRows = within(log).getAllByRole('listitem');
-    expect(remainingRows).toHaveLength(1);
     expect(remainingRows[0]).toHaveTextContent('Egg');
     expect(screen.getByText('78')).toBeInTheDocument(); // just Egg's calories remain
   });
@@ -100,15 +153,17 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
   it('navigating to a previous day shows that day empty, with the next-day button disabled while on today', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await waitForLogToFinishLoading();
     const header = screen.getByRole('banner');
 
     // Log something today first.
     await user.type(screen.getByRole('textbox', { name: /search foods/i }), 'Egg');
     await user.click(screen.getByRole('button', { name: /^add$/i }));
-    expect(within(header).getByText('78')).toBeInTheDocument();
+    await waitFor(() => expect(within(header).getByText('78')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /next day/i })).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: /previous day/i }));
+    await waitForLogToFinishLoading();
 
     expect(screen.getByText('Yesterday')).toBeInTheDocument();
     expect(within(header).getByText('0')).toBeInTheDocument(); // yesterday's total, not today's
@@ -119,24 +174,34 @@ describe('App (integration: search -> add -> persistence across remounts)', () =
   it('adding a food while viewing a previous day logs it under that date, not today, and returning to today leaves it unaffected', async () => {
     const user = userEvent.setup();
     render(<App />);
+    await waitForLogToFinishLoading();
     const header = screen.getByRole('banner');
 
     await user.click(screen.getByRole('button', { name: /previous day/i })); // now on 2026-03-04
+    await waitForLogToFinishLoading();
 
     await user.type(screen.getByRole('textbox', { name: /search foods/i }), 'Banana');
     await user.click(screen.getByRole('button', { name: /^add$/i }));
 
-    expect(screen.getByText('Banana', { selector: 'p' })).toBeInTheDocument(); // in the log, not just the FoodCard
-    expect(within(header).getByText('105')).toBeInTheDocument(); // yesterday's total
-
-    const stored = JSON.parse(localStorage.getItem('calorie-tracker:log') ?? '[]');
-    expect(stored).toHaveLength(1);
-    expect(stored[0]).toMatchObject({ foodName: 'Banana', date: '2026-03-04' });
+    await screen.findByText('Banana', { selector: 'p' }); // in the log, not just the FoodCard
+    await waitFor(() => expect(within(header).getByText('105')).toBeInTheDocument()); // yesterday's total
 
     await user.click(screen.getByRole('button', { name: /^today$/i }));
+    await waitForLogToFinishLoading();
 
     expect(within(header).getByText('0')).toBeInTheDocument(); // today has nothing logged
     expect(screen.getByText(/nothing logged here yet/i)).toBeInTheDocument();
     expect(screen.queryByText('Banana', { selector: 'p' })).not.toBeInTheDocument();
+  });
+
+  it('shows a friendly error and keeps entries empty when the backend is unreachable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockRejectedValue(new Error('network error')),
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText(/couldn't reach the server/i)).toBeInTheDocument();
   });
 });
