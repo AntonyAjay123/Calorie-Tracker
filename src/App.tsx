@@ -9,7 +9,7 @@ import { calculateTotals } from './utils/totals';
 
 function App() {
   const [selectedDate, setSelectedDate] = useState(todayDateString());
-  const { entries, addEntry, removeEntry } = useFoodLog(selectedDate);
+  const { entries, isLoading, error, addEntry, removeEntry } = useFoodLog(selectedDate);
   const totals = calculateTotals(entries);
 
   return (
@@ -34,7 +34,7 @@ function App() {
         </section>
 
         <div className="mt-10">
-          <DailyLog entries={entries} onRemove={removeEntry} />
+          <DailyLog entries={entries} onRemove={removeEntry} isLoading={isLoading} error={error} />
         </div>
       </main>
     </div>
