@@ -8,21 +8,20 @@ See [docs/PLAN.md](docs/PLAN.md) for the full architecture and phased build plan
 
 ## Tech Stack
 
-- **React** + **TypeScript**
+- **React 19** + **TypeScript**
 - **Vite** — build tooling and dev server
-- **Tailwind CSS** — styling
+- **Tailwind CSS v4** — styling, wired in via the `@tailwindcss/vite` plugin (no `tailwind.config.ts`/PostCSS config needed in v4)
 - **localStorage** — client-side persistence (no backend)
+- **oxlint** — linting (bundled by the Vite scaffold)
 
 ## How to Run
 
-> Not yet scaffolded — this section will be filled in once Phase 0 (project scaffolding) is complete.
-
-Once scaffolded, the standard Vite workflow applies:
-
 ```bash
 npm install
-npm run dev      # start local dev server
-npm run build    # production build
+npm run dev       # start local dev server (http://localhost:5173)
+npm run build     # type-check (tsc -b) + production build
+npm run lint      # oxlint
+npm run preview   # preview the production build locally
 ```
 
 ## Folder Structure
@@ -33,34 +32,39 @@ calorie_tracker/
 │   └── PLAN.md              # architecture + phased implementation plan
 ├── src/
 │   ├── main.tsx
-│   ├── App.tsx
-│   ├── index.css
+│   ├── App.tsx                       # renders FoodSearchPanel, wires up useFoodLog
+│   ├── index.css                     # Tailwind entry (`@import "tailwindcss"`)
 │   ├── components/
-│   │   ├── Header/           # sticky calorie/macro total bar
-│   │   ├── FoodSearch/       # search bar + quick-add food grid
-│   │   └── DailyLog/         # today's logged entries + totals
+│   │   └── FoodSearch/
+│   │       ├── FoodSearchPanel.tsx   # owns search query state + filtering
+│   │       ├── SearchBar.tsx         # controlled text input
+│   │       ├── FoodGrid.tsx          # renders FoodCard list / empty state
+│   │       └── FoodCard.tsx          # macros + quantity stepper + Add button
+│   │   # Header/ and DailyLog/ land in Phase 3 (not built yet)
 │   ├── data/
-│   │   └── foods.ts          # static list of 20+ common foods
+│   │   └── foods.ts                  # static list of 24 common foods
 │   ├── hooks/
-│   │   └── useFoodLog.ts     # log state + localStorage sync
+│   │   └── useFoodLog.ts             # today's entries + addEntry/removeEntry, backed by storage.ts
 │   ├── lib/
-│   │   └── storage.ts        # localStorage read/write helpers
+│   │   └── storage.ts                # localStorage getEntries/saveEntries
 │   ├── types/
-│   │   └── index.ts          # Food, LogEntry types
+│   │   └── index.ts                  # Food, LogEntry types
 │   └── utils/
-│       └── date.ts           # today's-date helpers
+│       └── date.ts                   # todayDateString() (local date, not UTC)
 ├── public/
+│   └── favicon.svg
 ├── index.html
 ├── package.json
-├── tsconfig.json
-├── tailwind.config.ts
-├── vite.config.ts
+├── package-lock.json
+├── tsconfig.json / tsconfig.app.json / tsconfig.node.json
+├── vite.config.ts                    # registers @vitejs/plugin-react + @tailwindcss/vite
+├── .oxlintrc.json
 ├── .env
 ├── .gitignore
 └── CLAUDE.md
 ```
 
-(Most of the above does not exist yet — it's the target structure once scaffolding lands.)
+Note: Tailwind v4 needs no `tailwind.config.ts` — theme/config lives in CSS via the Vite plugin.
 
 ## Data Model
 
@@ -90,8 +94,16 @@ interface LogEntry {
 }
 ```
 
-Stored under the `calorie-tracker:log` key in `localStorage` as a `LogEntry[]`.
+Stored under the `calorie-tracker:log` key in `localStorage` as a `LogEntry[]` (all dates are kept; the app currently only reads/writes today's).
 
 ## Build Status
 
-Documentation and planning only — no application code has been written yet. Implementation proceeds phase by phase per `docs/PLAN.md` (Phase 0: scaffolding → Phase 1: food search UI → Phase 2: log persistence → Phase 3: totals display → Phase 4: optional polish).
+Phases 0–2 are implemented (see `docs/PLAN.md` for full phase definitions):
+
+- ✅ **Phase 0** — Vite + React + TypeScript + Tailwind CSS v4 scaffolding
+- ✅ **Phase 1** — static food list + live search + quick-add cards
+- ✅ **Phase 2** — `localStorage`-backed log persistence, quantity stepper wired to `addEntry`
+- ⬜ **Phase 3** — daily log display + running calorie/macro totals (not built — entries persist but aren't rendered back in the UI yet)
+- ⬜ **Phase 4** — optional polish / stretch goals
+
+Known gap: since Phase 3 hasn't landed, clicking "Add" saves the entry to `localStorage` but there's currently no visible confirmation or log view in the UI — verify via browser devtools (`localStorage.getItem('calorie-tracker:log')`) until Phase 3 ships.
