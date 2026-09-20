@@ -107,3 +107,20 @@ Phases 0–2 are implemented (see `docs/PLAN.md` for full phase definitions):
 - ⬜ **Phase 4** — optional polish / stretch goals
 
 Known gap: since Phase 3 hasn't landed, clicking "Add" saves the entry to `localStorage` but there's currently no visible confirmation or log view in the UI — verify via browser devtools (`localStorage.getItem('calorie-tracker:log')`) until Phase 3 ships.
+
+## Coding Guidelines
+
+### Testing
+
+Always write unit, component, and integration tests for new code — a feature or phase isn't done until it's tested, not just manually clicked through.
+
+- **Unit tests** — pure logic in `lib/`, `utils/`, and hooks in isolation (e.g. `storage.ts`'s read/write, `date.ts`'s `todayDateString`, `useFoodLog`'s `addEntry`/`removeEntry` behavior).
+- **Component tests** — individual React components rendered and interacted with via Testing Library (e.g. `SearchBar` calls `onChange` as the user types, `FoodCard`'s quantity stepper and Add button behave correctly, `FoodGrid` shows the empty state when nothing matches).
+- **Integration tests** — multiple units/components working together end-to-end within the app (e.g. typing a search query filters the visible cards, then clicking Add on a filtered card writes the correct entry to `localStorage` and it survives a simulated reload).
+
+Recommended stack (not yet installed as of Phase 0–2): **Vitest** + **React Testing Library** + `jsdom`, since it integrates natively with the existing Vite config with minimal setup. Playwright is a reasonable addition later if true browser e2e coverage is wanted, but Vitest + RTL should cover unit/component/integration needs for an app this size.
+
+Conventions once the framework is added:
+- Test files live next to the code they cover, as `*.test.ts` / `*.test.tsx`.
+- Run the suite with `npm test`.
+- New PRs should include tests for the code they add; retrofitting tests for already-merged code is also expected, not optional.
