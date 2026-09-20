@@ -40,12 +40,18 @@ calorie_tracker/
 │   ├── App.tsx                       # renders FoodSearchPanel, wires up useFoodLog
 │   ├── index.css                     # Tailwind entry (`@import "tailwindcss"`)
 │   ├── components/
-│   │   └── FoodSearch/
-│   │       ├── FoodSearchPanel.tsx   # owns search query state + filtering
-│   │       ├── SearchBar.tsx         # controlled text input
-│   │       ├── FoodGrid.tsx          # renders FoodCard list / empty state
-│   │       └── FoodCard.tsx          # macros + quantity stepper + Add button
-│   │   # Header/ and DailyLog/ land in Phase 3 (not built yet)
+│   │   ├── FoodSearch/
+│   │   │   ├── FoodSearchPanel.tsx   # owns search query state + filtering
+│   │   │   ├── SearchBar.tsx         # controlled text input
+│   │   │   ├── FoodGrid.tsx          # renders FoodCard list / empty state
+│   │   │   └── FoodCard.tsx          # macros + quantity stepper + Add button
+│   │   ├── Header/
+│   │   │   ├── Header.tsx            # sticky top bar; renders DailyTotals
+│   │   │   └── DailyTotals.tsx       # calories + protein/carbs/fat, pure/presentational
+│   │   └── DailyLog/
+│   │       ├── DailyLog.tsx          # section heading + LogEntryList
+│   │       ├── LogEntryList.tsx      # sorts entries newest-first, renders empty state
+│   │       └── LogEntryRow.tsx       # one entry; delete needs an inline confirm/cancel
 │   ├── data/
 │   │   └── foods.ts                  # static list of 24 common foods
 │   ├── hooks/
@@ -55,14 +61,18 @@ calorie_tracker/
 │   ├── types/
 │   │   └── index.ts                  # Food, LogEntry types
 │   ├── utils/
-│   │   └── date.ts                   # todayDateString() (local date, not UTC)
+│   │   ├── date.ts                   # todayDateString() (local date, not UTC)
+│   │   ├── totals.ts                 # calculateTotals(entries) -> {calories, protein, carbs, fat}
+│   │   └── format.ts                 # round1() for display-rounding macros
 │   ├── test/
 │   │   └── setup.ts                  # jest-dom matchers + RTL auto-cleanup, loaded by vitest
-│   ├── App.test.tsx                  # integration: search -> add -> localStorage, persists across remount
+│   ├── App.test.tsx                  # integration: search -> add -> log display -> totals -> confirm-delete
 │   ├── lib/storage.test.ts           # unit
-│   ├── utils/date.test.ts            # unit
+│   ├── utils/{date,totals,format}.test.ts  # unit
 │   ├── hooks/useFoodLog.test.ts      # unit
-│   └── components/FoodSearch/*.test.tsx  # component + FoodSearchPanel integration tests
+│   ├── components/FoodSearch/*.test.tsx    # component + FoodSearchPanel integration tests
+│   ├── components/Header/*.test.tsx        # component
+│   └── components/DailyLog/*.test.tsx      # component (LogEntryRow's confirm flow, LogEntryList's sort/tie-break)
 ├── public/
 │   └── favicon.svg
 ├── index.html
@@ -110,15 +120,18 @@ Stored under the `calorie-tracker:log` key in `localStorage` as a `LogEntry[]` (
 
 ## Build Status
 
-Phases 0–2 are implemented (see `docs/PLAN.md` for full phase definitions):
+Phases 0–3 are implemented (see `docs/PLAN.md` for full phase definitions):
 
 - ✅ **Phase 0** — Vite + React + TypeScript + Tailwind CSS v4 scaffolding
 - ✅ **Phase 1** — static food list + live search + quick-add cards
 - ✅ **Phase 2** — `localStorage`-backed log persistence, quantity stepper wired to `addEntry`
-- ⬜ **Phase 3** — daily log display + running calorie/macro totals (not built — entries persist but aren't rendered back in the UI yet)
-- ⬜ **Phase 4** — optional polish / stretch goals
+- ✅ **Phase 3** — sticky `Header` with running calorie/macro totals, `DailyLog` listing today's entries newest-first with a confirm-before-delete action
+- ⬜ **Phase 4** — optional polish / stretch goals (see `docs/PLAN.md`)
 
-Known gap: since Phase 3 hasn't landed, clicking "Add" saves the entry to `localStorage` but there's currently no visible confirmation or log view in the UI — verify via browser devtools (`localStorage.getItem('calorie-tracker:log')`) until Phase 3 ships.
+Notable Phase 3 decisions (confirmed with the user before building):
+- Log entries display **newest-added first**. `LogEntryList` reverses the array before a stable sort by `loggedAt` so that two entries added in the same millisecond still resolve to newest-first (a real tie-breaking bug caught by the test suite while building this — see `LogEntryList.test.tsx`).
+- Deleting a logged entry requires an inline **confirm/cancel** step (`LogEntryRow`'s own local state) rather than deleting immediately or using `window.confirm` (which the app avoids as a legacy/blocking pattern).
+- `Header` is `position: sticky` and renders `DailyTotals`; there's no separate/duplicate totals display elsewhere on the page.
 
 ## Coding Guidelines
 
