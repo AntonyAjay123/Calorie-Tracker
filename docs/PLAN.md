@@ -4,6 +4,8 @@
 
 A simple, no-login, single-page calorie tracker. Users search or quick-pick from a built-in list of 20+ common foods, add them to a daily log, and see a running calorie/macro total. Everything persists locally across page refreshes — no backend, no accounts.
 
+**Status: Phases 0–2 complete** (implemented in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1)). Phases 3–4 are not yet built — see the [Phases](#phases) section below for per-phase status.
+
 ## Tech Stack
 
 - **React** + **TypeScript**
@@ -75,24 +77,23 @@ calorie_tracker/
 │   ├── App.tsx
 │   ├── index.css
 │   ├── components/
-│   │   ├── Header/
-│   │   ├── FoodSearch/
-│   │   └── DailyLog/
+│   │   ├── Header/           # ⬜ Phase 3
+│   │   ├── FoodSearch/       # ✅ built — FoodSearchPanel, SearchBar, FoodGrid, FoodCard
+│   │   └── DailyLog/         # ⬜ Phase 3
 │   ├── data/
-│   │   └── foods.ts        # static list of 20+ common foods
+│   │   └── foods.ts        # ✅ 24 common foods
 │   ├── hooks/
-│   │   └── useFoodLog.ts   # log state + localStorage sync
+│   │   └── useFoodLog.ts   # ✅ log state + localStorage sync
 │   ├── lib/
-│   │   └── storage.ts      # localStorage read/write helpers
+│   │   └── storage.ts      # ✅ localStorage read/write helpers
 │   ├── types/
-│   │   └── index.ts        # Food, LogEntry
+│   │   └── index.ts        # ✅ Food, LogEntry
 │   └── utils/
-│       └── date.ts         # today's date helpers
+│       └── date.ts         # ✅ today's date helpers
 ├── public/
 ├── index.html
 ├── package.json
 ├── tsconfig.json
-├── tailwind.config.ts
 ├── vite.config.ts
 ├── .env
 ├── .gitignore
@@ -100,11 +101,15 @@ calorie_tracker/
 └── README.md
 ```
 
+**Implementation notes (post Phase 0–2):**
+- No `tailwind.config.ts` — Tailwind v4 is configured via the `@tailwindcss/vite` plugin and a single `@import "tailwindcss"` in `index.css`, not a JS config file.
+- `.oxlintrc.json` and `package-lock.json` exist too — `oxlint` ships bundled with the current Vite `react-ts` template's `npm run lint` script (kept as-is rather than stripped out).
+
 ## Phases
 
 Each phase should be implemented and verified (in a browser) before moving to the next.
 
-### Phase 0 — Project Scaffolding
+### Phase 0 — Project Scaffolding ✅ Complete
 
 - Scaffold with Vite's `react-ts` template.
 - Install and configure Tailwind CSS.
@@ -113,12 +118,12 @@ Each phase should be implemented and verified (in a browser) before moving to th
 **Assumptions:**
 - npm as the package manager.
 - Tailwind CSS v4 (latest stable at install time).
-- No test framework or linter configured unless requested later.
+- No test framework or linter configured unless requested later. *(Actual: the current Vite `react-ts` template bundles `oxlint` by default — kept rather than removed, since it's zero-config and catches real issues, e.g. a `set-state-in-effect` warning during Phase 2.)*
 
-### Phase 1 — Static Food Database + Search UI
+### Phase 1 — Static Food Database + Search UI ✅ Complete
 
 - Define the `Food` type in `types/index.ts`.
-- Populate `data/foods.ts` with 20+ common foods (chicken breast, rice, eggs, banana, oats, broccoli, salmon, etc.), each with calories/protein/carbs/fat/servingSize.
+- Populate `data/foods.ts` with 20+ common foods (chicken breast, rice, eggs, banana, oats, broccoli, salmon, etc.), each with calories/protein/carbs/fat/servingSize. *(Actual: 24 foods.)*
 - Build `SearchBar` (filters by substring match on name) and `FoodGrid`/`FoodCard` (shows all foods by default, filters live as the user types).
 - Purely presentational in this phase — no "Add" wiring yet, no persistence.
 
@@ -126,19 +131,23 @@ Each phase should be implemented and verified (in a browser) before moving to th
 - Nutrition values are approximate, typical per-serving figures — not pulled from a live nutrition API.
 - Search is a simple case-insensitive substring match, not fuzzy/typo-tolerant.
 
-### Phase 2 — Food Log Data Model + localStorage Persistence
+### Phase 2 — Food Log Data Model + localStorage Persistence ✅ Complete
 
 - Define the `LogEntry` type.
 - Build `lib/storage.ts` with `getEntries()` / `saveEntries()` (JSON read/write to `localStorage`).
 - Build `hooks/useFoodLog.ts` exposing today's entries plus `addEntry(food, quantity)` / `removeEntry(id)`, backed by `storage.ts`.
-- Wire each `FoodCard`'s "Add" action to `addEntry`, defaulting `quantity = 1`.
+- Wire each `FoodCard`'s "Add" action to `addEntry`, defaulting `quantity = 1`. *(Actual: each card has a −/+ quantity stepper in 0.5 increments, per user decision when this phase was implemented.)*
 
 **Assumptions:**
 - "Today" is derived from the browser's local date (`date.ts` helper).
 - No multi-device sync — data lives in one browser's `localStorage`.
 - Entries persist indefinitely across all dates in storage even though only today's are shown.
 
-### Phase 3 — Daily Log Display + Calorie/Macro Totals
+**Verified:** `npm run build` and `npm run lint` pass clean; manually tested in a real browser — search filtering, quantity stepper, Add action, and that a logged entry survives a page refresh (read back correctly from `localStorage`).
+
+Known gap carried into Phase 3: there's no UI feedback or visible log yet when an item is added — only Phase 3's `DailyLog`/`Header` components will surface it.
+
+### Phase 3 — Daily Log Display + Calorie/Macro Totals ⬜ Not started
 
 - Build `DailyLog` / `LogEntryList` / `LogEntryRow` to render today's entries with a delete action per row.
 - Build `Header` / `DailyTotals` to compute and display the running total (calories, protein, carbs, fat) from today's entries, updating reactively on add/delete.
@@ -147,7 +156,7 @@ Each phase should be implemented and verified (in a browser) before moving to th
 - No calorie goal/target — just a running total, since none was requested.
 - Totals recompute client-side on every state change; no memoization needed at this scale.
 
-### Phase 4 — Polish & Stretch (optional, discuss before building)
+### Phase 4 — Polish & Stretch (optional, discuss before building) ⬜ Not started
 
 - Quantity editor refinement (numeric input/stepper) if not already solid from Phase 2.
 - Empty states (no foods match search; log empty for today) and a responsive layout pass.
