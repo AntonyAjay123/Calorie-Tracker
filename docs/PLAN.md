@@ -2,16 +2,23 @@
 
 ## Overview
 
-A simple, no-login, single-page calorie tracker. Users search or quick-pick from a built-in list of 20+ common foods, add them to a daily log, and see a running calorie/macro total. Everything persists locally across page refreshes — no backend, no accounts.
+A simple, no-login, single-page calorie tracker. Users search or quick-pick from a built-in list of 20+ common foods, add them to a daily log, and see a running calorie/macro total. As shipped in Phases 0-4, everything persists locally across page refreshes via `localStorage` — no accounts, no backend, no database. **Phase 6 changes this**: a small FastAPI + SQLite backend takes over as the source of truth for the daily log, and the app requires that backend running from then on — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
 
-**Status: Phases 0–4 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3)). See the [Phases](#phases) section below for per-phase status and how Phase 4's actual scope was narrowed down from the options listed there.
+**Status: Phases 0–4 complete** (Phases 0–2 in [PR #1](https://github.com/AntonyAjay123/Calorie-Tracker/pull/1), Phase 3 in [PR #2](https://github.com/AntonyAjay123/Calorie-Tracker/pull/2), Phase 4 in [PR #3](https://github.com/AntonyAjay123/Calorie-Tracker/pull/3)). Phases 5–10 (a SQLite-backed daily log, photo upload + AI calorie analysis, plus food icons) are planned but not yet built — see [Photo Upload Feature](#photo-upload-feature-phases-5-10) below.
 
 ## Tech Stack
 
+**Frontend (Phases 0-4):**
 - **React** + **TypeScript**
 - **Vite** (build tooling / dev server)
 - **Tailwind CSS** (styling)
 - **localStorage** (persistence — no backend, no external database)
+
+**Backend (Phase 5+):**
+- **Python 3.12+**, managed by **uv** (no pip/poetry)
+- **FastAPI** + **Pydantic v2** (fully typed request/response schemas and config)
+- **SQLite** + **SQLModel** (Phase 6+) — persists the daily log, replacing `localStorage`
+- **Anthropic Python SDK** (Phase 7+) — vision-capable Claude model call
 
 ## Data Model
 
@@ -41,7 +48,7 @@ interface LogEntry {
 }
 ```
 
-`localStorage` key: `calorie-tracker:log` → `LogEntry[]`. All dates are kept in storage, but the MVP UI only ever reads/writes today's date — this keeps the door open for a future "view past days" feature without a storage migration.
+`localStorage` key: `calorie-tracker:log` → `LogEntry[]`. All dates are kept in storage, but the MVP UI only ever reads/writes today's date — this keeps the door open for a future "view past days" feature without a storage migration. *(As of Phase 6, this `localStorage` layer is retired entirely in favor of a SQLite-backed backend API — see Phase 6 below.)*
 
 ## Component Tree
 
@@ -177,3 +184,83 @@ Scope was narrowed down with the user before building (see decisions below) to: 
 - Viewing a past day is not read-only: "Add Food" logs to whichever date is currently selected, not always today, so a forgotten meal can be logged retroactively. Navigating into the future is blocked (next-day button disabled while on today).
 
 **Verified:** `npm run build`, `npm run lint`, and `npm test` (66 tests) all pass; manually tested in a real browser at both desktop and mobile (~390px, via an iframe since the browser tool's window resize wasn't taking effect) widths — date navigation, retroactive logging on a past day, totals resetting per selected date, and the visual redesign all confirmed working.
+
+## Photo Upload Feature (Phases 5-10)
+
+Adds the app's first real backend: a FastAPI service (managed with `uv`, fully typed Python) that (a) persists the daily log in a **SQLite** database — replacing `localStorage` entirely — and (b) keeps the Anthropic API key server-side to proxy a single "analyze this food photo" call. Also adds an icon to each of the 24 existing catalog foods.
+
+**Decisions confirmed with the user before planning this feature:**
+- **AI output shape**: one best-guess food item per photo (name + calories/protein/carbs/fat/serving size), not multiple detected items on a plate.
+- **Photo persistence**: the uploaded photo is never stored anywhere — the backend holds it in memory only for the duration of the analysis request.
+- **Existing food icons**: since real stock photos can't be sourced/licensed here, each of the 24 catalog foods gets a food emoji (🍗🍚🥚🍌 etc.) instead of a photographic image — fits the app's existing flat "nutrition label" design system and needs no asset pipeline.
+- **Daily log persistence**: **SQLite replaces `localStorage` entirely** as the source of truth for the log (not a dual-store split between catalog and photo entries). The app now requires the backend running at all times, not just for the photo feature. **No data migration** — this is still a personal/dev-stage project with no real users to protect, so SQLite starts empty and any existing browser `localStorage` data is simply left behind, unused.
+- **Food name & calories, made explicit**: the AI's returned `name` is saved verbatim as the log entry's `foodName` — no user renaming step. The AI's returned calories (and protein/carbs/fat) are shown to the user in `PhotoResultCard` *before* they click "Add to log", not just after.
+- "Python-typescript" in the original request is interpreted as **fully-typed Python** (type hints throughout + Pydantic/SQLModel models) — what `uv` + FastAPI naturally support, not a literal TypeScript backend.
+
+### Phase 5 — Backend Scaffolding (FastAPI + uv) ⬜ Not started
+
+- Create `backend/` (sibling to `src/`): `backend/pyproject.toml` (FastAPI, Uvicorn, Pydantic v2, `pydantic-settings`, `python-multipart`), `backend/app/main.py` (FastAPI instance, CORS middleware, `GET /api/health`), `backend/app/config.py` (`Settings` loading `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL` from the root `.env`).
+- Add `server.proxy` for `/api` to `vite.config.ts` so the frontend can call same-origin `/api/...` in dev.
+- No AI calls, no database yet — this phase only proves the two processes can talk to each other.
+
+**Assumptions:**
+- Local dev only (no deployment/hosting config in this phase).
+- Python 3.12+, managed entirely by `uv` (`uv sync`, `uv run`) — no pip/poetry.
+- App fails fast at startup if `ANTHROPIC_API_KEY` is missing, rather than failing silently on first upload.
+
+### Phase 6 — Daily Log Database (SQLite) ⬜ Not started
+
+- Add `sqlmodel` to `backend/pyproject.toml` (Pydantic + SQLAlchemy combined — one model class serves as both the DB table and the API schema; chosen over raw SQLAlchemy for less boilerplate and over plain `sqlite3` for actual type safety).
+- `backend/app/models.py`: a `LogEntry` SQLModel table (id, foodId, foodName, quantity, calories, protein, carbs, fat, servingSize, date, loggedAt, source). `backend/app/db.py`: engine + session setup; tables created on startup (`SQLModel.metadata.create_all`) — no Alembic/migrations for this MVP.
+- `backend/app/routers/log.py`: `GET /api/log?date=YYYY-MM-DD` (list for a date), `POST /api/log` (create — **server assigns `id` via `uuid.uuid4()` and stamps `loggedAt`**, so `id` stays a `string` end-to-end and the existing TS type barely changes), `DELETE /api/log/{id}`.
+- SQLite file at `backend/data/calorie_tracker.db` — **new `.gitignore` entry needed** (`backend/data/`), since this is real user data, not source.
+- **Frontend**: rewrite `src/lib/storage.ts` from a synchronous `localStorage` wrapper into an async `fetch`-based API client. `src/hooks/useFoodLog.ts` becomes async (loading/error state); business logic (quantity × macro scaling) stays client-side exactly as today — the backend just persists/returns already-computed entries. `App.tsx`/`DateNav` show a loading state per date change (was instant client-side filtering before) and a friendly "can't reach the server" state if the backend is down (a failure mode that didn't exist with pure `localStorage`).
+- **This is the phase that replaces `localStorage`.** No migration of existing browser data, per the confirmed decision above.
+
+**Assumptions:**
+- Only the daily log moves to SQLite — the 24-item food catalog (`src/data/foods.ts`) stays a static frontend file; it doesn't change, so there's no reason to add DB complexity there.
+- `GET /api/log` is scoped by a single `date` query param, matching how the frontend already only ever needs one date's entries at a time.
+
+**Verified (once built):** backend `pytest` CRUD tests against a temp/in-memory SQLite DB (`GET`/`POST`/`DELETE /api/log`); `storage.test.ts`, `useFoodLog.test.ts`, and `App.test.tsx` (≈20 of the app's 66 existing tests, which all mocked/used `localStorage` directly) rewritten to mock `fetch` instead.
+
+### Phase 7 — Photo Analysis Endpoint (Anthropic Vision Integration) ⬜ Not started
+
+- `backend/app/schemas.py`: `FoodAnalysisResult` (name, calories, protein, carbs, fat, servingSize, disclaimer) + a typed error response.
+- `backend/app/vision.py`: one Anthropic Messages API call with the base64-encoded image and a strict-JSON prompt; validates/parses the response into `FoodAnalysisResult`, raising a typed exception on any failure (bad JSON, missing fields, refusal, upstream error).
+- `POST /api/analyze-food-image`: validates content-type (`image/jpeg`/`png`/`webp`) and size (e.g. 8MB max) server-side, calls `vision.py`, returns the result or a typed error. Image is never written to disk — this endpoint stays stateless even though Phase 6 added a database for the log.
+
+**Assumptions:**
+- One item per photo, per the confirmed decision above.
+- No caching/deduplication of repeated uploads — acceptable for a single-user local app.
+
+### Phase 8 — Photo Upload Frontend ⬜ Not started
+
+- `src/types/index.ts`: add `PhotoAnalysisResult`.
+- `src/hooks/usePhotoAnalysis.ts`: `idle | uploading | success | error` state machine, POSTs the file as `multipart/form-data`, returns the typed result/error.
+- `src/components/PhotoUpload/PhotoUploadPanel.tsx`: file input (`capture="environment"` for mobile camera), preview, Analyze action, loading/error states — reuses existing `ink`/`paper`/`line` design tokens, no new colors.
+- `src/components/PhotoUpload/PhotoResultCard.tsx`: **displays the AI's returned name, calories, and macros before the user acts** (same macro-dot styling as `FoodCard`, plus a quantity stepper). On "Add to log", it calls `useFoodLog`'s `addEntry` with `foodName` set verbatim from the AI's `name` field (no rename step) and the displayed calories/macros scaled by the chosen quantity — which, since Phase 6 already made `useFoodLog`/`addEntry` a generic async log client, needs **no further changes to `useFoodLog` or `storage.ts`** at this point.
+- `App.tsx`: a simple Search/Photo toggle inside "Add Food" — one integration point into `addEntry`, no new page.
+- Client-side validation mirrors the backend's (type/size) for instant feedback before the round-trip.
+
+**Assumptions:**
+- No photo persisted anywhere, per the confirmed decision above — only the resulting `LogEntry` (via Phase 6's `POST /api/log`) is kept.
+- The quantity stepper pattern from `FoodCard` is reused so a user can scale the AI's estimate (e.g. "1.5x this plate").
+
+### Phase 9 — Existing Food Item Icons (emoji) ⬜ Not started
+
+- Extend `Food` with a required `emoji: string`; add one to each of the 24 entries in `src/data/foods.ts`.
+- Render it in `FoodCard.tsx` next to the food name.
+
+**Assumptions:**
+- OS/browser emoji font only — no image assets, no `public/` additions, no licensing concerns, per the confirmed decision above.
+
+### Phase 10 — Polish & Guardrails (optional, discuss before building) ⬜ Not started
+
+- Basic request throttling on `/api/analyze-food-image` to guard against runaway API cost during local dev.
+- Client- or server-side image downscaling before sending to Anthropic (token cost + upload speed).
+- Retry affordance in the UI if analysis fails (network error, AI couldn't identify the food).
+- Surfacing `ANTHROPIC_MODEL` configurability more visibly (currently just an env var).
+- Alembic migrations, if the `log_entries` schema needs to evolve beyond Phase 6's initial shape.
+
+**Assumptions:**
+- This phase is intentionally deferred/optional, same convention as Phase 4's polish phase — only pursued if requested after Phases 5-9 ship.
