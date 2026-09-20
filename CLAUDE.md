@@ -13,16 +13,21 @@ See [docs/PLAN.md](docs/PLAN.md) for the full architecture and phased build plan
 - **Tailwind CSS v4** — styling, wired in via the `@tailwindcss/vite` plugin (no `tailwind.config.ts`/PostCSS config needed in v4)
 - **localStorage** — client-side persistence (no backend)
 - **oxlint** — linting (bundled by the Vite scaffold)
+- **Vitest** + **React Testing Library** + `jsdom` — unit/component/integration testing
 
 ## How to Run
 
 ```bash
 npm install
-npm run dev       # start local dev server (http://localhost:5173)
-npm run build     # type-check (tsc -b) + production build
-npm run lint      # oxlint
-npm run preview   # preview the production build locally
+npm run dev         # start local dev server (http://localhost:5173)
+npm run build       # type-check (tsc -b) + production build
+npm run lint        # oxlint
+npm run preview     # preview the production build locally
+npm test            # run the test suite once (vitest run)
+npm run test:watch  # run the test suite in watch mode
 ```
+
+> Node note: Vitest 5 declares an engines range of `^22.12.0 || ^24.0.0 || >=26.0.0`. This project has been developed and verified on Node v23.11.0, which falls outside that range — `npm install` prints an `EBADENGINE` warning, but the full suite (`build`, `lint`, `test`) runs correctly on it in practice. If you hit real Vitest issues, try Node 22 or 24 LTS first.
 
 ## Folder Structure
 
@@ -49,15 +54,22 @@ calorie_tracker/
 │   │   └── storage.ts                # localStorage getEntries/saveEntries
 │   ├── types/
 │   │   └── index.ts                  # Food, LogEntry types
-│   └── utils/
-│       └── date.ts                   # todayDateString() (local date, not UTC)
+│   ├── utils/
+│   │   └── date.ts                   # todayDateString() (local date, not UTC)
+│   ├── test/
+│   │   └── setup.ts                  # jest-dom matchers + RTL auto-cleanup, loaded by vitest
+│   ├── App.test.tsx                  # integration: search -> add -> localStorage, persists across remount
+│   ├── lib/storage.test.ts           # unit
+│   ├── utils/date.test.ts            # unit
+│   ├── hooks/useFoodLog.test.ts      # unit
+│   └── components/FoodSearch/*.test.tsx  # component + FoodSearchPanel integration tests
 ├── public/
 │   └── favicon.svg
 ├── index.html
 ├── package.json
 ├── package-lock.json
 ├── tsconfig.json / tsconfig.app.json / tsconfig.node.json
-├── vite.config.ts                    # registers @vitejs/plugin-react + @tailwindcss/vite
+├── vite.config.ts                    # registers @vitejs/plugin-react + @tailwindcss/vite; `test` block configures Vitest (defineConfig imported from `vitest/config`, not `vite`)
 ├── .oxlintrc.json
 ├── .env
 ├── .gitignore
@@ -118,9 +130,15 @@ Always write unit, component, and integration tests for new code — a feature o
 - **Component tests** — individual React components rendered and interacted with via Testing Library (e.g. `SearchBar` calls `onChange` as the user types, `FoodCard`'s quantity stepper and Add button behave correctly, `FoodGrid` shows the empty state when nothing matches).
 - **Integration tests** — multiple units/components working together end-to-end within the app (e.g. typing a search query filters the visible cards, then clicking Add on a filtered card writes the correct entry to `localStorage` and it survives a simulated reload).
 
-Recommended stack (not yet installed as of Phase 0–2): **Vitest** + **React Testing Library** + `jsdom`, since it integrates natively with the existing Vite config with minimal setup. Playwright is a reasonable addition later if true browser e2e coverage is wanted, but Vitest + RTL should cover unit/component/integration needs for an app this size.
+Stack: **Vitest** + **React Testing Library** + `jsdom`, configured in `vite.config.ts`'s `test` block (`defineConfig` is imported from `vitest/config`, not `vite`, so the merged config type-checks — see gotchas below). Playwright is a reasonable addition later if true browser e2e coverage is wanted, but Vitest + RTL cover unit/component/integration needs for an app this size.
 
-Conventions once the framework is added:
+Conventions:
 - Test files live next to the code they cover, as `*.test.ts` / `*.test.tsx`.
-- Run the suite with `npm test`.
+- Run the suite with `npm test` (once) or `npm run test:watch` (watch mode).
 - New PRs should include tests for the code they add; retrofitting tests for already-merged code is also expected, not optional.
+- `vitest.config` global mode is **off** (no `globals: true`) — import `describe`/`it`/`expect`/`vi` explicitly from `'vitest'` in each test file. `src/test/setup.ts` registers `afterEach(cleanup)` manually for this reason (React Testing Library's auto-cleanup normally relies on `globals: true`; without it, tests in the same file will see leftover DOM from previous tests unless this is wired up).
+
+Gotchas hit while setting this up (worth knowing before touching `vite.config.ts` or writing time-sensitive tests):
+- **Don't use the `/// <reference types="vitest/config" />` + `defineConfig` from `'vite'` pattern** to merge the `test` block into `vite.config.ts` — it fails to type-check under this project's `tsconfig.node.json` (`module: "nodenext"`). Import `defineConfig` from `'vitest/config'` instead.
+- **Pin/verify the `vitest` version against the installed `vite` version.** A plain `npm install -D vitest` resolved to vitest 3.2.7, which bundles its own nested `vite@7.3.6` and produces incompatible `Plugin` types against this project's `vite@8.x`, breaking the build. Installing `vitest@latest` (5.x, which declares `vite: "^6.4.0 || ^7.0.0 || ^8.0.0"`) fixed it.
+- **Fake timers + `userEvent` can hang/time out.** `vi.useFakeTimers()` (full fake timers) combined with `@testing-library/user-event` caused real test timeouts in `App.test.tsx`. Scope fake timers to just `Date` instead: `vi.useFakeTimers({ toFake: ['Date'] })` plus `vi.setSystemTime(...)`, leaving `setTimeout`/`setInterval` real so `userEvent` behaves normally.
