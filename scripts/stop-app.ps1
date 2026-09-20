@@ -8,9 +8,9 @@
     Also remove the node_modules/.venv named volumes (docker compose down -v),
     forcing a clean reinstall the next time the app starts.
 .EXAMPLE
-    ./stop-app.ps1
+    ./scripts/stop-app.ps1
 .EXAMPLE
-    ./stop-app.ps1 -Volumes
+    ./scripts/stop-app.ps1 -Volumes
 #>
 [CmdletBinding()]
 param(
@@ -18,7 +18,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$composeFile = Join-Path $PSScriptRoot 'docker-compose.yml'
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$composeFile = Join-Path $repoRoot 'docker-compose.yml'
 
 Write-Host "Stopping Calorie Tracker..." -ForegroundColor Cyan
 

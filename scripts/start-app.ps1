@@ -10,9 +10,9 @@
     adding an npm/uv dependency). Without this, docker compose reuses the
     existing images, which is faster for a normal start.
 .EXAMPLE
-    ./start-app.ps1
+    ./scripts/start-app.ps1
 .EXAMPLE
-    ./start-app.ps1 -Build
+    ./scripts/start-app.ps1 -Build
 #>
 [CmdletBinding()]
 param(
@@ -20,7 +20,8 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$composeFile = Join-Path $PSScriptRoot 'docker-compose.yml'
+$repoRoot = Split-Path $PSScriptRoot -Parent
+$composeFile = Join-Path $repoRoot 'docker-compose.yml'
 
 docker info *> $null
 if ($LASTEXITCODE -ne 0) {
@@ -47,4 +48,4 @@ Write-Host "  Frontend: http://localhost:5173"
 Write-Host "  Backend:  http://localhost:8001"
 Write-Host ""
 Write-Host "View logs with: docker compose logs -f"
-Write-Host "Stop with:      ./stop-app.ps1"
+Write-Host "Stop with:      ./scripts/stop-app.ps1"

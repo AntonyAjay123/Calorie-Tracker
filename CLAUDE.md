@@ -73,10 +73,10 @@ docker compose down         # stop and remove the containers
 Or via the convenience PowerShell scripts (repo root; work from any directory, not just the repo root):
 
 ```powershell
-./start-app.ps1          # docker compose up -d
-./start-app.ps1 -Build   # docker compose up --build -d, after a Dockerfile/dependency change
-./stop-app.ps1           # docker compose down
-./stop-app.ps1 -Volumes  # docker compose down -v, also clears the node_modules/.venv volumes
+./scripts/start-app.ps1          # docker compose up -d
+./scripts/start-app.ps1 -Build   # docker compose up --build -d, after a Dockerfile/dependency change
+./scripts/stop-app.ps1           # docker compose down
+./scripts/stop-app.ps1 -Volumes  # docker compose down -v, also clears the node_modules/.venv volumes
 ```
 
 This starts the frontend at `http://localhost:5173` and the backend at `http://localhost:8001`, same ports as running them directly. It's a **dev-oriented** setup, not a production build: both containers run their normal dev commands (`npm run dev`, `uv run fastapi dev --reload`) with the project directory bind-mounted in, so editing code on the host still hot-reloads inside the containers — nothing needs rebuilding for a source change, only for a dependency change (new npm/uv package) or a `Dockerfile` edit.
@@ -145,8 +145,9 @@ calorie_tracker/
 ├── Dockerfile                          # frontend image: npm install, bind-mount overrides source at runtime (dev-oriented, no prod build)
 ├── docker-compose.yml                  # orchestrates frontend + backend; see How to Run's Docker section
 ├── .dockerignore                       # excludes backend/, node_modules/, dist/, .git/, etc. from the frontend build context
-├── start-app.ps1                       # docker compose up -d (or --build -d with -Build); works from any directory
-├── stop-app.ps1                        # docker compose down (or down -v with -Volumes); works from any directory
+├── scripts/
+│   ├── start-app.ps1                   # docker compose up -d (or --build -d with -Build); works from any directory
+│   └── stop-app.ps1                    # docker compose down (or down -v with -Volumes); works from any directory
 ├── backend/                           # ✅ Phase 5 scaffolded; ⬜ Phase 6+ adds the DB/vision pieces below
 │   ├── Dockerfile                     # backend image: uv sync, bind-mount overrides source at runtime (dev-oriented)
 │   ├── .dockerignore                  # excludes .venv/, __pycache__/, data/, etc. from the backend build context
