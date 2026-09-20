@@ -6,6 +6,12 @@ interface FoodCardProps {
   onAdd: (food: Food, quantity: number) => void;
 }
 
+const MACRO_DOTS = [
+  { key: 'protein', label: 'protein', dot: 'bg-protein' },
+  { key: 'carbs', label: 'carbs', dot: 'bg-carb' },
+  { key: 'fat', label: 'fat', dot: 'bg-fat' },
+] as const;
+
 export function FoodCard({ food, onAdd }: FoodCardProps) {
   const [quantity, setQuantity] = useState(1);
 
@@ -13,37 +19,37 @@ export function FoodCard({ food, onAdd }: FoodCardProps) {
   const increase = () => setQuantity((q) => Math.round((q + 0.5) * 10) / 10);
 
   return (
-    <div className="flex flex-col justify-between rounded-lg border border-slate-200 bg-white p-4 shadow-sm">
+    <div className="flex flex-col justify-between border border-line bg-paper p-4">
       <div>
-        <h3 className="font-semibold text-slate-900">{food.name}</h3>
-        <p className="text-sm text-slate-500">{food.servingSize}</p>
-        <dl className="mt-2 grid grid-cols-4 gap-1 text-xs text-slate-600">
+        <h3 className="font-semibold text-ink">{food.name}</h3>
+        <p className="text-sm text-ink-muted">{food.servingSize}</p>
+        <dl className="mt-3 flex gap-4 text-xs tabular-nums">
           <div>
-            <dt className="font-medium text-slate-800">{food.calories}</dt>
-            <dd>kcal</dd>
+            <dt className="flex items-center gap-1 font-semibold text-ink">
+              <span className="h-1.5 w-1.5 rounded-full bg-calorie" aria-hidden />
+              {food.calories}
+            </dt>
+            <dd className="text-ink-muted">kcal</dd>
           </div>
-          <div>
-            <dt className="font-medium text-slate-800">{food.protein}g</dt>
-            <dd>protein</dd>
-          </div>
-          <div>
-            <dt className="font-medium text-slate-800">{food.carbs}g</dt>
-            <dd>carbs</dd>
-          </div>
-          <div>
-            <dt className="font-medium text-slate-800">{food.fat}g</dt>
-            <dd>fat</dd>
-          </div>
+          {MACRO_DOTS.map(({ key, label, dot }) => (
+            <div key={key}>
+              <dt className="flex items-center gap-1 font-semibold text-ink">
+                <span className={`h-1.5 w-1.5 rounded-full ${dot}`} aria-hidden />
+                {food[key]}g
+              </dt>
+              <dd className="text-ink-muted">{label}</dd>
+            </div>
+          ))}
         </dl>
       </div>
 
-      <div className="mt-4 flex items-center justify-between gap-2">
+      <div className="mt-4 flex items-center justify-between gap-2 border-t border-line pt-3">
         <div className="flex items-center gap-2">
           <button
             type="button"
             onClick={decrease}
             aria-label={`Decrease quantity for ${food.name}`}
-            className="h-7 w-7 rounded border border-slate-300 text-slate-600 hover:bg-slate-100"
+            className="h-7 w-7 border border-line text-ink-muted hover:border-ink hover:text-ink"
           >
             −
           </button>
@@ -52,7 +58,7 @@ export function FoodCard({ food, onAdd }: FoodCardProps) {
             type="button"
             onClick={increase}
             aria-label={`Increase quantity for ${food.name}`}
-            className="h-7 w-7 rounded border border-slate-300 text-slate-600 hover:bg-slate-100"
+            className="h-7 w-7 border border-line text-ink-muted hover:border-ink hover:text-ink"
           >
             +
           </button>
@@ -60,7 +66,7 @@ export function FoodCard({ food, onAdd }: FoodCardProps) {
         <button
           type="button"
           onClick={() => onAdd(food, quantity)}
-          className="rounded bg-emerald-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-700"
+          className="bg-ink px-3 py-1.5 text-sm font-medium text-paper hover:bg-ink/90"
         >
           Add
         </button>

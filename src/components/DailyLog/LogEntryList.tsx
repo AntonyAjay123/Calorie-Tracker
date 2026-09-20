@@ -8,7 +8,7 @@ interface LogEntryListProps {
 
 export function LogEntryList({ entries, onRemove }: LogEntryListProps) {
   if (entries.length === 0) {
-    return <p className="mt-3 text-slate-500">Nothing logged yet today — add a food above to get started.</p>;
+    return <p className="mt-3 text-ink-muted">Nothing logged here yet — add a food above to get started.</p>;
   }
 
   // `entries` arrives in insertion (oldest-first) order. Reverse before the stable sort so that
@@ -17,7 +17,7 @@ export function LogEntryList({ entries, onRemove }: LogEntryListProps) {
   const sortedByNewestFirst = [...entries].reverse().sort((a, b) => b.loggedAt.localeCompare(a.loggedAt));
 
   return (
-    <ul className="mt-3 divide-y divide-slate-200 rounded-lg border border-slate-200 bg-white">
+    <ul className="mt-3 border-t border-line">
       {sortedByNewestFirst.map((entry) => (
         <LogEntryRow key={entry.id} entry={entry} onRemove={onRemove} />
       ))}

@@ -23,7 +23,7 @@ function makeEntry(overrides: Partial<LogEntry>): LogEntry {
 describe('LogEntryList', () => {
   it('shows an empty-state message when there are no entries', () => {
     render(<LogEntryList entries={[]} onRemove={() => {}} />);
-    expect(screen.getByText(/nothing logged yet today/i)).toBeInTheDocument();
+    expect(screen.getByText(/nothing logged here yet/i)).toBeInTheDocument();
   });
 
   it('renders a row per entry, newest (by loggedAt) first', () => {

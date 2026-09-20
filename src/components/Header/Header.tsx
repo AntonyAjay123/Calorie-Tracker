@@ -7,9 +7,9 @@ interface HeaderProps {
 
 export function Header({ totals }: HeaderProps) {
   return (
-    <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
+    <header className="sticky top-0 z-10 border-b-[3px] border-ink bg-paper/95 backdrop-blur">
       <div className="mx-auto max-w-5xl px-4 py-3">
-        <h1 className="text-lg font-semibold text-slate-900">Calorie Tracker</h1>
+        <h1 className="text-sm font-semibold text-ink-muted">Calorie Tracker</h1>
         <div className="mt-1">
           <DailyTotals totals={totals} />
         </div>
