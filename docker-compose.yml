@@ -1,0 +1,27 @@
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./backend:/app
+      - backend-venv:/app/.venv
+    env_file:
+      - .env
+
+  frontend:
+    build: .
+    ports:
+      - "5173:5173"
+    volumes:
+      - .:/app
+      - frontend-node-modules:/app/node_modules
+    environment:
+      - BACKEND_URL=http://backend:8001
+      - DOCKER=true
+    depends_on:
+      - backend
+
+volumes:
+  backend-venv:
+  frontend-node-modules:

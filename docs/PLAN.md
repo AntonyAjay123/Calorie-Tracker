@@ -20,6 +20,9 @@ A simple, no-login, single-page calorie tracker. Users search or quick-pick from
 - **SQLite** + **SQLModel** (Phase 6+) — persists the daily log, replacing `localStorage`
 - **Anthropic Python SDK** (Phase 7+) — vision-capable Claude model call
 
+**Containerization (optional, not a numbered phase) ✅ Complete:**
+- **Docker** + **Docker Compose** — `docker compose up --build` runs both services (dev-oriented: hot reload via bind mounts, not a production build). See `CLAUDE.md` → How to Run for the commands and the gotchas hit while setting it up (Docker-network hostnames vs. `localhost`, the file-watcher-over-bind-mount issue).
+
 ## Data Model
 
 ```ts
